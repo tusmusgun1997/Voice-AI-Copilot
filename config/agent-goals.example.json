@@ -1,0 +1,61 @@
+{
+  "profiles": [
+    {
+      "id": "appointment-intake",
+      "name": "Appointment Intake Agent",
+      "agentIds": ["replace_with_highlevel_agent_id"],
+      "scriptSummary": "Qualify the caller, answer the first question, offer an appointment, and confirm the next step.",
+      "goals": [
+        "Ask what service the caller needs",
+        "Capture urgency or preferred appointment time",
+        "Offer a concrete booking option",
+        "Confirm the appointment or follow-up owner"
+      ],
+      "criteria": [
+        {
+          "id": "qualification",
+          "label": "Service need captured",
+          "weight": 24,
+          "keywordsAny": ["what service", "what are you looking for", "what do you need", "first visit", "follow-up"],
+          "issue": "Agent did not clearly identify the caller's service need.",
+          "recommendation": "Add a required early question: 'What service are you looking for, and when would you like to come in?'"
+        },
+        {
+          "id": "nextStep",
+          "label": "Appointment path offered",
+          "weight": 28,
+          "keywordsAny": ["appointment", "schedule", "book", "available", "consultation"],
+          "allowExecutedAction": true,
+          "issue": "Agent did not move the caller toward booking or a clear callback.",
+          "recommendation": "Update the script so every qualified caller receives two appointment options or a named callback owner."
+        },
+        {
+          "id": "confirmation",
+          "label": "Next step confirmed",
+          "weight": 20,
+          "keywordsAny": ["confirmed", "you are set", "text confirmation", "next step", "we will call"],
+          "allowExecutedAction": true,
+          "issue": "Agent did not repeat the final outcome before ending the call.",
+          "recommendation": "Add a closing line that repeats the date, time, contact method, and owner of the next action."
+        },
+        {
+          "id": "escalation",
+          "label": "Human handoff for risk",
+          "weight": 20,
+          "requiredWhenAny": ["billing", "charged", "refund", "angry", "frustrated", "manager"],
+          "passWhenAny": ["transfer", "connect you", "have someone call", "create a ticket"],
+          "issue": "Caller risk was present but the agent did not route it to a human.",
+          "recommendation": "Create an escalation branch for billing, refund, and complaint language."
+        },
+        {
+          "id": "opening",
+          "label": "Clear opening",
+          "weight": 8,
+          "keywordsAny": ["thanks for calling", "hello", "hi ", "good morning", "good afternoon"],
+          "issue": "Opening did not clearly orient the caller.",
+          "recommendation": "Keep the opening short, branded, and immediately helpful."
+        }
+      ]
+    }
+  ]
+}

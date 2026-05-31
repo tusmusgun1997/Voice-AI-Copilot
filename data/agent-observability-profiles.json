@@ -1,0 +1,92 @@
+{
+  "profiles": [
+    {
+      "id": "profile-6a1843ecf4950022c5719426",
+      "name": "Home Renovation Lead Qualification",
+      "agentIds": [
+        "6a1843ecf4950022c5719426"
+      ],
+      "agentNames": [
+        "Business Lead Agent"
+      ],
+      "scriptSummary": "Qualify inbound home renovation leads, capture the caller's project need, urgency, contact details, and confirm a clear next step for the sales team.",
+      "goals": [
+        "Identify the caller's renovation project",
+        "Capture name and preferred contact detail",
+        "Ask about timeline or urgency",
+        "Ask about budget range or project size",
+        "Confirm that a team member will follow up",
+        "End with a clear next step"
+      ],
+      "negativeSignals": [
+        "Caller is confused about next step",
+        "Caller asks for pricing but no follow-up is offered",
+        "Caller is urgent or frustrated",
+        "Caller refuses to share contact details",
+        "Agent ends call without confirming callback",
+        "Caller asks to speak with a human"
+      ],
+      "parameters": [
+        {
+          "id": "parameter-1779976054231",
+          "title": "Project need captured",
+          "description": "Evaluate whether the agent clearly identified what home renovation project the caller is interested in, such as kitchen remodel, bathroom renovation, flooring, painting, roofing, or general renovation. Mark as failed if the caller showed interest but the agent did not clarify the project type.",
+          "category": "custom",
+          "successSignals": [
+            "renovation",
+            "remodel",
+            "kitchen",
+            "bathroom",
+            "flooring",
+            "painting",
+            "roofing",
+            "project",
+            "home improvement"
+          ],
+          "failureSignals": [
+            "not sure",
+            "just interested",
+            "saw an ad",
+            "tell me more",
+            "no project discussed"
+          ],
+          "recommendation": "Update the script so the agent asks: \"What type of renovation project are you considering?\"",
+          "promptGuidance": "After the caller shows interest, ask one clear question to identify the project type before collecting contact details.",
+          "requiresHumanReview": false,
+          "useActionType": "",
+          "enabled": true
+        },
+        {
+          "id": "parameter-1780131254294",
+          "title": "Budget and timeline qualified",
+          "description": "Evaluate whether the agent asked about the caller's expected project timeline and budget range, and captured enough information for the sales team to prioritize the lead. This passes if the caller shares either a clear timeline, budget range, or urgency level and the agent acknowledges it.",
+          "category": "custom",
+          "successSignals": [
+            "timeline",
+            "when are you looking to start",
+            "budget",
+            "price range",
+            "urgency",
+            "this month",
+            "next few weeks",
+            "flexible budget",
+            "need it soon"
+          ],
+          "failureSignals": [
+            "no budget discussed",
+            "no timeline discussed",
+            "not sure when",
+            "caller asks price but agent does not qualify",
+            "agent skips urgency"
+          ],
+          "recommendation": "Coach the agent to ask one simple qualifying question about timeline or budget before ending the call.",
+          "promptGuidance": "Before confirming the next step, ask: \"Do you have a rough timeline or budget range in mind for this project?\"",
+          "requiresHumanReview": false,
+          "useActionType": "",
+          "enabled": true
+        }
+      ],
+      "configured": true
+    }
+  ]
+}

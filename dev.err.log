@@ -1,0 +1,21 @@
+node:internal/child_process:413
+    throw errnoException(err, 'spawn');
+    ^
+
+Error: spawn EPERM
+    at ChildProcess.spawn (node:internal/child_process:413:11)
+    at spawn (node:child_process:757:9)
+    at Proxy.spawn (C:\Users\Tushar\Desktop\high level\node_modules\concurrently\dist\src\spawn.js:25:12)
+    at Proxy.start (C:\Users\Tushar\Desktop\high level\node_modules\concurrently\dist\src\command.js:95:28)
+    at maybeRunMore (C:\Users\Tushar\Desktop\high level\node_modules\concurrently\dist\src\concurrently.js:129:13)
+    at concurrently (C:\Users\Tushar\Desktop\high level\node_modules\concurrently\dist\src\concurrently.js:88:9)
+    at concurrently (C:\Users\Tushar\Desktop\high level\node_modules\concurrently\dist\src\index.js:51:44)
+    at Object.<anonymous> (C:\Users\Tushar\Desktop\high level\node_modules\concurrently\dist\bin\concurrently.js:240:26)
+    at Module._compile (node:internal/modules/cjs/loader:1256:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1310:10) {
+  errno: -4048,
+  code: 'EPERM',
+  syscall: 'spawn'
+}
+
+Node.js v18.17.0
