@@ -1,23 +1,15 @@
 <script setup>
-import { Plus, Trash2, Pencil } from '@lucide/vue';
-import { computed, nextTick, ref, watch } from 'vue';
+import { ExternalLink } from '@lucide/vue';
+import { computed, ref, watch } from 'vue';
 
 const props = defineProps({
-  editingObservabilityStage: {
-    type: String,
-    default: ''
-  },
-  editingProfileAgentId: {
-    type: String,
-    default: ''
-  },
   loadingProfileAgentId: {
     type: String,
     default: ''
   },
-  observabilityProfileDrafts: {
-    type: Object,
-    required: true
+  parameterVersions: {
+    type: Array,
+    default: () => []
   },
   profileEditError: {
     type: String,
@@ -41,47 +33,61 @@ const props = defineProps({
   }
 });
 
-const emit = defineEmits([
-  'add-observability-criterion',
-  'cancel-edit-observability-profile',
-  'remove-observability-criterion',
-  'save-observability-profile',
-  'start-edit-observability-profile'
-]);
+const emit = defineEmits(['apply-parameter-version', 'open-llm-parameters']);
 
 const selectedParameterId = ref('');
+const selectedVersionId = ref('');
 
-const activeDraft = computed(() => props.observabilityProfileDrafts?.[props.selectedAgentPanel.id] ?? null);
-const draftParameters = computed(() => activeDraft.value?.parameters ?? []);
-const summaryParameters = computed(() => props.selectedObservabilityProfile?.parameters ?? []);
-const isEditing = computed(
-  () =>
-    props.editingProfileAgentId === props.selectedAgentPanel.id &&
-    props.editingObservabilityStage.startsWith('parameter')
+const attachedVersionId = computed(() => props.selectedObservabilityProfile?.parameterVersionId || '');
+const attachedVersion = computed(() =>
+  props.parameterVersions.find((version) => version.id === attachedVersionId.value) ?? null
 );
-const activeParameters = computed(() => (isEditing.value ? draftParameters.value : summaryParameters.value));
+const attachedVersionName = computed(() => {
+  if (props.selectedObservabilityProfile?.parameterVersionName) {
+    return props.selectedObservabilityProfile.parameterVersionName;
+  }
+
+  return attachedVersion.value ? `${attachedVersion.value.name} ${attachedVersion.value.versionLabel}`.trim() : '';
+});
+const summaryParameters = computed(() => {
+  const savedParameters = props.selectedObservabilityProfile?.parameters ?? [];
+  if (savedParameters.length > 0) return savedParameters;
+  return attachedVersion.value?.parameters ?? [];
+});
 const selectedParameter = computed(
-  () => activeParameters.value.find((parameter) => parameter.id === selectedParameterId.value) ?? activeParameters.value[0] ?? null
-);
-const selectedDraftParameter = computed(
-  () => draftParameters.value.find((parameter) => parameter.id === selectedParameter.value?.id) ?? draftParameters.value[0] ?? null
+  () => summaryParameters.value.find((parameter) => parameter.id === selectedParameterId.value) ?? summaryParameters.value[0] ?? null
 );
 const isLoading = computed(() => props.loadingProfileAgentId === props.selectedAgentPanel.id);
+const isVersionManaged = computed(() => Boolean(attachedVersionId.value));
 
 watch(
-  () => activeParameters.value.map((parameter) => parameter.id).join('|'),
+  () => summaryParameters.value.map((parameter) => parameter.id).join('|'),
   () => {
-    const stillExists = activeParameters.value.some((parameter) => parameter.id === selectedParameterId.value);
+    const stillExists = summaryParameters.value.some((parameter) => parameter.id === selectedParameterId.value);
     if (!stillExists) {
-      selectedParameterId.value = activeParameters.value[0]?.id ?? '';
+      selectedParameterId.value = summaryParameters.value[0]?.id ?? '';
     }
   },
   { immediate: true }
 );
 
-function parameterCount(profile) {
-  return profile?.parameters?.length ?? 0;
-}
+watch(
+  () => attachedVersionId.value,
+  (versionId) => {
+    selectedVersionId.value = versionId || props.parameterVersions[0]?.id || '';
+  },
+  { immediate: true }
+);
+
+watch(
+  () => props.parameterVersions.map((version) => version.id).join('|'),
+  () => {
+    const selectedExists = props.parameterVersions.some((version) => version.id === selectedVersionId.value);
+    if (!selectedExists) {
+      selectedVersionId.value = attachedVersionId.value || props.parameterVersions[0]?.id || '';
+    }
+  }
+);
 
 function parameterTitle(parameter, index = 0) {
   return parameter?.title?.trim() || `Parameter ${index + 1}`;
@@ -99,30 +105,17 @@ function selectParameter(parameter) {
   selectedParameterId.value = parameter.id;
 }
 
-function startEditParameter(parameter = selectedParameter.value) {
-  emit('start-edit-observability-profile', {
+function applySelectedVersion() {
+  if (!selectedVersionId.value) return;
+
+  emit('apply-parameter-version', {
     agent: props.selectedAgentPanel,
-    stage: `parameter:${parameter?.id || 'new'}`
+    versionId: selectedVersionId.value
   });
 }
 
-async function addParameter() {
-  if (!isEditing.value) {
-    startEditParameter({ id: 'new' });
-    await nextTick();
-  }
-
-  emit('add-observability-criterion', props.selectedAgentPanel.id);
-  await nextTick();
-  selectedParameterId.value = draftParameters.value[draftParameters.value.length - 1]?.id ?? selectedParameterId.value;
-}
-
-function removeParameter(parameter) {
-  if (!parameter) return;
-
-  const nextParameter = draftParameters.value.find((item) => item.id !== parameter.id);
-  selectedParameterId.value = nextParameter?.id ?? '';
-  emit('remove-observability-criterion', props.selectedAgentPanel.id, parameter.id);
+function openLlmParameters(versionId = attachedVersionId.value || selectedVersionId.value) {
+  emit('open-llm-parameters', versionId || '');
 }
 </script>
 
@@ -133,9 +126,9 @@ function removeParameter(parameter) {
         <p class="eyebrow">Observability parameters</p>
         <h3>Transcript review checks</h3>
       </div>
-      <button class="text-button compact" type="button" :disabled="!selectedObservabilityProfile" @click="addParameter">
-        <Plus :size="15" />
-        Add parameter
+      <button class="text-button compact" type="button" @click="openLlmParameters()">
+        <ExternalLink :size="15" />
+        {{ isVersionManaged ? 'Manage version' : 'Manage LLM parameters' }}
       </button>
     </header>
 
@@ -144,34 +137,64 @@ function removeParameter(parameter) {
     </p>
 
     <section v-else class="summary-tab-panel parameter-edit-shell">
+      <section class="parameter-version-selector" :class="{ 'needs-attachment': !isVersionManaged }">
+        <div>
+          <p class="eyebrow">{{ isVersionManaged ? 'Selected version' : 'Action required' }}</p>
+          <h4>{{ attachedVersionName || 'Attach LLM parameters' }}</h4>
+          <p>
+            {{
+              isVersionManaged
+                ? 'This reusable checklist is attached to this agent and will be used for transcript analysis.'
+                : 'Select a reusable checklist so the LLM knows how to judge this agent.'
+            }}
+          </p>
+        </div>
+        <label>
+          Version
+          <select v-model="selectedVersionId" :disabled="parameterVersions.length === 0">
+            <option v-if="parameterVersions.length === 0" value="">No parameter versions available</option>
+            <option v-for="version in parameterVersions" :key="version.id" :value="version.id">
+              {{ version.name }} {{ version.versionLabel }}
+            </option>
+          </select>
+        </label>
+        <button
+          class="text-button compact primary"
+          type="button"
+          :disabled="!selectedVersionId || savingProfileAgentId === selectedAgentPanel.id"
+          @click="applySelectedVersion"
+        >
+          {{ savingProfileAgentId === selectedAgentPanel.id ? 'Saving' : isVersionManaged ? 'Switch version' : 'Attach version' }}
+        </button>
+      </section>
+
       <div class="parameter-count-line">
-        <span>{{ parameterCount(selectedObservabilityProfile) }} parameters</span>
-        <p>These checks are used by the analysis layer to judge each call transcript.</p>
+        <span>{{ summaryParameters.length }} parameters</span>
+        <p>
+          These checks are managed in the LLM Parameters section. Agents only attach and read the selected version here.
+        </p>
       </div>
 
-      <div v-if="activeParameters.length === 0" class="parameter-empty-state compact">
-        <span>Not configured</span>
-        <h4>No observability parameters yet</h4>
-        <p>Add the first check to define exactly what the analysis should evaluate in each call.</p>
-        <div v-if="isEditing" class="inline-save-bar empty-inline-actions">
-          <button class="text-button compact" type="button" @click="$emit('cancel-edit-observability-profile')">
-            Cancel
-          </button>
-          <button
-            class="text-button compact primary"
-            type="button"
-            :disabled="savingProfileAgentId === selectedAgentPanel.id"
-            @click="$emit('save-observability-profile', selectedAgentPanel)"
-          >
-            {{ savingProfileAgentId === selectedAgentPanel.id ? 'Saving' : 'Save changes' }}
-          </button>
-        </div>
+      <div v-if="summaryParameters.length === 0" class="parameter-empty-state compact">
+        <span>{{ isVersionManaged ? 'Version empty' : 'Action required' }}</span>
+        <h4>{{ isVersionManaged ? 'This version has no parameters yet' : 'Attach LLM parameters' }}</h4>
+        <p>
+          {{
+            isVersionManaged
+              ? 'Open the selected LLM parameter version to add reusable transcript checks.'
+              : 'Attach an LLM parameter version above, or create one in the LLM Parameters section.'
+          }}
+        </p>
+        <button class="text-button compact" type="button" @click="openLlmParameters()">
+          <ExternalLink :size="15" />
+          Open LLM Parameters
+        </button>
       </div>
 
       <div v-else class="parameter-read-workbench">
-        <aside class="parameter-rail readonly" aria-label="Saved observability parameters">
+        <aside class="parameter-rail readonly" aria-label="Attached observability parameters">
           <button
-            v-for="(parameter, index) in activeParameters"
+            v-for="(parameter, index) in summaryParameters"
             :key="parameter.id"
             class="parameter-rail-item"
             :class="{ active: selectedParameter?.id === parameter.id, disabled: parameter.enabled === false }"
@@ -184,16 +207,7 @@ function removeParameter(parameter) {
           </button>
         </aside>
 
-        <article v-if="selectedParameter && !isEditing" class="parameter-read-detail hover-edit-surface">
-          <button
-            class="section-edit-icon"
-            type="button"
-            aria-label="Edit selected observability parameter"
-            @click="startEditParameter(selectedParameter)"
-          >
-            <Pencil :size="15" />
-          </button>
-
+        <article v-if="selectedParameter" class="parameter-read-detail">
           <div class="parameter-read-top">
             <div>
               <p class="eyebrow">Selected check</p>
@@ -232,111 +246,20 @@ function removeParameter(parameter) {
             <span>Prompt/script guidance</span>
             <p>{{ selectedParameter.promptGuidance }}</p>
           </section>
-        </article>
 
-        <article v-else-if="selectedDraftParameter" class="parameter-read-detail parameter-inline-editor">
-          <div class="parameter-read-top">
-            <div>
-              <p class="eyebrow">Selected check</p>
-              <h4>{{ selectedDraftParameter.title || 'Untitled parameter' }}</h4>
-            </div>
-            <label class="parameter-toggle">
-              <input v-model="selectedDraftParameter.enabled" type="checkbox" />
-              Enabled
-            </label>
-          </div>
-
-          <label class="inline-edit-field">
-            <span>Title</span>
-            <input v-model="selectedDraftParameter.title" type="text" placeholder="Example: Project need captured" />
-          </label>
-
-          <label class="inline-edit-field">
-            <span>Description for analysis</span>
-            <textarea
-              v-model="selectedDraftParameter.description"
-              rows="5"
-              placeholder="Describe what should be evaluated in the transcript and what counts as success."
-            ></textarea>
-          </label>
-
-          <div class="parameter-read-grid">
-            <label class="inline-edit-field">
-              <span>Success signal hints</span>
-              <textarea
-                v-model="selectedDraftParameter.successSignalsText"
-                rows="4"
-                placeholder="Optional words or phrases that suggest this passed."
-              ></textarea>
-            </label>
-            <label class="inline-edit-field">
-              <span>Failure signal hints</span>
-              <textarea
-                v-model="selectedDraftParameter.failureSignalsText"
-                rows="4"
-                placeholder="Optional words or phrases that suggest this needs review."
-              ></textarea>
-            </label>
-          </div>
-
-          <div class="parameter-read-grid">
-            <label class="inline-edit-field">
-              <span>Recommendation when missed</span>
-              <textarea
-                v-model="selectedDraftParameter.recommendation"
-                rows="4"
-                placeholder="What should the dashboard recommend if this check fails?"
-              ></textarea>
-            </label>
-            <label class="inline-edit-field">
-              <span>Prompt/script guidance</span>
-              <textarea
-                v-model="selectedDraftParameter.promptGuidance"
-                rows="4"
-                placeholder="Optional prompt change or script coaching note."
-              ></textarea>
-            </label>
-          </div>
-
-          <div class="parameter-human-review">
-            <label class="parameter-toggle">
-              <input v-model="selectedDraftParameter.requiresHumanReview" type="checkbox" />
-              Create human review action when missed
-            </label>
-            <label v-if="selectedDraftParameter.requiresHumanReview" class="inline-edit-field compact">
-              <span>Action type</span>
-              <input
-                v-model="selectedDraftParameter.useActionType"
-                type="text"
-                placeholder="Example: QA review or Human handoff"
-              />
-            </label>
-          </div>
-
-          <p v-if="profileEditError" class="edit-error">{{ profileEditError }}</p>
-
-          <div class="inline-save-bar">
-            <button class="text-button compact danger" type="button" @click="removeParameter(selectedDraftParameter)">
-              <Trash2 :size="14" />
-              Remove
+          <section class="parameter-read-note parameter-managed-note">
+            <span>Managed by version</span>
+            <p>Edit this reusable checklist from the LLM Parameters section. Any agent attached to this version will use the updated checks.</p>
+            <button class="text-button compact" type="button" @click="openLlmParameters(attachedVersionId)">
+              <ExternalLink :size="15" />
+              Manage this version
             </button>
-            <span></span>
-            <button class="text-button compact" type="button" @click="$emit('cancel-edit-observability-profile')">
-              Cancel
-            </button>
-            <button
-              class="text-button compact primary"
-              type="button"
-              :disabled="savingProfileAgentId === selectedAgentPanel.id"
-              @click="$emit('save-observability-profile', selectedAgentPanel)"
-            >
-              {{ savingProfileAgentId === selectedAgentPanel.id ? 'Saving' : 'Save parameter' }}
-            </button>
-          </div>
+          </section>
         </article>
       </div>
 
-      <p v-if="profileEditMessage && !isEditing" class="edit-success">{{ profileEditMessage }}</p>
+      <p v-if="profileEditError" class="edit-error">{{ profileEditError }}</p>
+      <p v-if="profileEditMessage" class="edit-success">{{ profileEditMessage }}</p>
     </section>
   </section>
 </template>

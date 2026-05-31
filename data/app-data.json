@@ -1,0 +1,454 @@
+{
+  "analyses": [
+    {
+      "id": "analysis-89w8BhdDot7ZJMWK5JCA-6a1acc2311bcc5cb1f4ead89",
+      "jobId": "demo-job-recommendation-1",
+      "locationId": "89w8BhdDot7ZJMWK5JCA",
+      "agentId": "6a1843ecf4950022c5719426",
+      "agentName": "Business Lead Agent A",
+      "callId": "6a1acc2311bcc5cb1f4ead89",
+      "callCreatedAt": "2026-05-30T11:38:11.270Z",
+      "durationSeconds": 71,
+      "status": "succeeded",
+      "stage": "needs_review",
+      "score": 58,
+      "summary": "Demo analysis: the caller showed confusion about the repair question and the agent ended the call without creating a clear human callback path.",
+      "parameterResults": [
+        {
+          "parameterId": "caller-risk-or-friction-detected",
+          "title": "Caller risk or friction handled",
+          "status": "failed",
+          "confidence": "high",
+          "evidence": "Caller said they could not understand and would talk to someone else.",
+          "reasoningSummary": "The agent acknowledged the confusion but did not offer a clear human follow-up or callback."
+        },
+        {
+          "parameterId": "next-step-confirmed",
+          "title": "Clear next step confirmed",
+          "status": "failed",
+          "confidence": "medium",
+          "evidence": "The call ended with no confirmed callback owner or timeframe.",
+          "reasoningSummary": "The caller left without a next step."
+        }
+      ],
+      "recommendations": [
+        {
+          "id": "demo-rec-confusion-recovery",
+          "callId": "6a1acc2311bcc5cb1f4ead89",
+          "agentId": "6a1843ecf4950022c5719426",
+          "title": "Add a confusion recovery branch",
+          "detail": "When a caller says they do not understand, the agent should simplify the question and offer a human callback instead of ending the call.",
+          "severity": "critical",
+          "promptPatch": "If the caller sounds confused, say: \"No problem, I can have a team member call you back. What is the best number and time to reach you?\"",
+          "targetType": "agent_profile",
+          "targetAction": "update",
+          "targetId": "6a1843ecf4950022c5719426",
+          "suggestedChange": "Add a caller-confusion branch to the prompt with a required callback offer.",
+          "reviewStatus": "needs_human_review",
+          "confidence": "high",
+          "parameterId": "caller-risk-or-friction-detected"
+        },
+        {
+          "id": "demo-rec-next-step",
+          "callId": "6a1acc2311bcc5cb1f4ead89",
+          "agentId": "6a1843ecf4950022c5719426",
+          "title": "Make callback confirmation mandatory",
+          "detail": "The agent should confirm who will follow up and when before closing calls where the caller asks to speak with someone else.",
+          "severity": "warning",
+          "promptPatch": "Before ending any unresolved call, confirm: \"A team member will call you back at [time/contact].\"",
+          "targetType": "highlevel_goal",
+          "targetAction": "add",
+          "targetId": "callback-followup-goal",
+          "suggestedChange": "Add a HighLevel goal/action for human callback when a caller requests another person.",
+          "reviewStatus": "needs_human_review",
+          "confidence": "medium",
+          "parameterId": "next-step-confirmed"
+        }
+      ],
+      "useActions": [
+        {
+          "id": "demo-action-callback-review",
+          "callId": "6a1acc2311bcc5cb1f4ead89",
+          "agentId": "6a1843ecf4950022c5719426",
+          "type": "Callback review",
+          "reason": "Caller said they would talk to Anita after not understanding the agent.",
+          "snippet": "Sorry. I can't understand. I will talk to Anita.",
+          "severity": "critical",
+          "parameterId": "caller-risk-or-friction-detected",
+          "status": "open"
+        }
+      ],
+      "errorMessage": "",
+      "model": "demo-seed",
+      "queuedReason": "demo-seed",
+      "attempts": 1,
+      "maxAttempts": 1,
+      "nextRetryAt": null,
+      "createdAt": "2026-05-31T12:52:00.000Z",
+      "updatedAt": "2026-05-31T12:52:00.000Z",
+      "analyzedAt": "2026-05-31T12:52:00.000Z"
+    },
+    {
+      "id": "analysis-89w8BhdDot7ZJMWK5JCA-6a1ac016c7eaf02adc0cfc20",
+      "jobId": "demo-job-recommendation-2",
+      "locationId": "89w8BhdDot7ZJMWK5JCA",
+      "agentId": "6a1843ecf4950022c5719426",
+      "agentName": "Business Lead Agent A",
+      "callId": "6a1ac016c7eaf02adc0cfc20",
+      "callCreatedAt": "2026-05-30T10:46:46.160Z",
+      "durationSeconds": 198,
+      "status": "succeeded",
+      "stage": "watch",
+      "score": 76,
+      "summary": "Demo analysis: the call captured the project direction but could be improved by collecting preferred callback timing and budget comfort earlier.",
+      "parameterResults": [
+        {
+          "parameterId": "timeline-urgency-qualified",
+          "title": "Timeline and urgency qualified",
+          "status": "passed",
+          "confidence": "medium",
+          "evidence": "Caller shared a rough start window.",
+          "reasoningSummary": "Timeline was captured, but callback timing could be more explicit."
+        }
+      ],
+      "recommendations": [
+        {
+          "id": "demo-rec-callback-time",
+          "callId": "6a1ac016c7eaf02adc0cfc20",
+          "agentId": "6a1843ecf4950022c5719426",
+          "title": "Capture preferred callback time",
+          "detail": "Add a lightweight check for the best callback time so sales can follow up when the caller is available.",
+          "severity": "info",
+          "promptPatch": "After collecting contact details, ask: \"What is the best time for our team to call you back?\"",
+          "targetType": "observability_parameter",
+          "targetAction": "add",
+          "targetId": "preferred-callback-time",
+          "suggestedChange": "Add a new observability parameter for preferred callback time capture.",
+          "reviewStatus": "needs_human_review",
+          "confidence": "medium",
+          "parameterId": "preferred-callback-time"
+        }
+      ],
+      "useActions": [
+        {
+          "id": "demo-action-sales-note",
+          "callId": "6a1ac016c7eaf02adc0cfc20",
+          "agentId": "6a1843ecf4950022c5719426",
+          "type": "Sales handoff note",
+          "reason": "Caller appears qualified; review transcript before sales callback.",
+          "snippet": "Project direction and timeline were captured, but preferred callback time was not explicit.",
+          "severity": "warning",
+          "parameterId": "preferred-callback-time",
+          "status": "open"
+        }
+      ],
+      "errorMessage": "",
+      "model": "demo-seed",
+      "queuedReason": "demo-seed",
+      "attempts": 1,
+      "maxAttempts": 1,
+      "nextRetryAt": null,
+      "createdAt": "2026-05-31T12:52:30.000Z",
+      "updatedAt": "2026-05-31T12:52:30.000Z",
+      "analyzedAt": "2026-05-31T12:52:30.000Z"
+    }
+  ],
+  "profiles": [
+    {
+      "id": "profile-6a1843ecf4950022c5719426",
+      "name": "Business Lead Agent A Observability",
+      "agentIds": [
+        "6a1843ecf4950022c5719426"
+      ],
+      "agentNames": [
+        "Business Lead Agent A"
+      ],
+      "scriptSummary": "",
+      "goals": [],
+      "negativeSignals": [],
+      "parameterVersionId": "default-lead-qualification-v1",
+      "parameterVersionName": "Default lead qualification v1",
+      "parameterVersionDescription": "A reusable starter checklist for judging whether a Voice AI agent captured the caller need, contact details, urgency, next step, and human-review signals.",
+      "parameters": [],
+      "configured": true
+    }
+  ],
+  "versions": [
+    {
+      "id": "default-lead-qualification-v2",
+      "name": "Default lead qualification",
+      "versionLabel": "v2",
+      "description": "A reusable starter checklist for judging whether a Voice AI agent captured the caller need, contact details, urgency, next step, and human-review signals.",
+      "sourceTemplateId": "default-lead-qualification-v1",
+      "parameters": [
+        {
+          "id": "project-need-captured",
+          "title": "Project or issue need captured",
+          "description": "Evaluate whether the agent clearly identified why the caller contacted the business and captured the core project, service need, or issue in enough detail for a human team member to act.",
+          "category": "qualification",
+          "successSignals": [
+            "need",
+            "issue",
+            "project",
+            "looking for",
+            "interested in",
+            "problem"
+          ],
+          "failureSignals": [
+            "not sure why they called",
+            "no issue captured",
+            "unclear request"
+          ],
+          "recommendation": "Update the agent objective or script to ask one direct question about the caller need before moving to next steps.",
+          "promptGuidance": "Ask: \"What would you like help with today?\" Then summarize the need back in one short sentence.",
+          "requiresHumanReview": false,
+          "useActionType": "",
+          "enabled": true
+        },
+        {
+          "id": "contact-details-captured",
+          "title": "Contact details captured",
+          "description": "Evaluate whether the agent captured the caller name and at least one usable contact method or confirmed that HighLevel already has enough contact information.",
+          "category": "intake",
+          "successSignals": [
+            "name",
+            "phone",
+            "email",
+            "contact",
+            "spell"
+          ],
+          "failureSignals": [
+            "no name",
+            "no contact",
+            "cannot call back"
+          ],
+          "recommendation": "Add an explicit contact capture step before the call closes, including name confirmation when needed.",
+          "promptGuidance": "Before ending the call, confirm the caller name and the best callback number or email.",
+          "requiresHumanReview": true,
+          "useActionType": "Contact follow-up",
+          "enabled": true
+        },
+        {
+          "id": "timeline-urgency-qualified",
+          "title": "Timeline and urgency qualified",
+          "description": "Evaluate whether the agent asked when the caller needs help, whether the request is urgent, or whether there is a preferred callback/service timeline.",
+          "category": "qualification",
+          "successSignals": [
+            "today",
+            "tomorrow",
+            "this week",
+            "next week",
+            "urgent",
+            "timeline",
+            "when"
+          ],
+          "failureSignals": [
+            "no timeline",
+            "unclear urgency",
+            "call back sometime"
+          ],
+          "recommendation": "Coach the agent to ask one timing question so the team can prioritize the lead or support request.",
+          "promptGuidance": "Ask: \"When are you hoping to get this handled?\" or \"Is this urgent or flexible?\"",
+          "requiresHumanReview": false,
+          "useActionType": "",
+          "enabled": true
+        },
+        {
+          "id": "next-step-confirmed",
+          "title": "Clear next step confirmed",
+          "description": "Evaluate whether the agent ended with a concrete next step, such as a callback owner, appointment, expected follow-up window, or human handoff.",
+          "category": "handoff",
+          "successSignals": [
+            "call you back",
+            "follow up",
+            "appointment",
+            "scheduled",
+            "team member",
+            "next step"
+          ],
+          "failureSignals": [
+            "no next step",
+            "ended abruptly",
+            "unclear follow-up"
+          ],
+          "recommendation": "Update the script so every successful intake call closes with who will follow up and when.",
+          "promptGuidance": "End with: \"A team member will follow up [timeframe] about [caller need].\"",
+          "requiresHumanReview": true,
+          "useActionType": "Follow-up review",
+          "enabled": true
+        },
+        {
+          "id": "caller-risk-or-friction-detected",
+          "title": "Caller risk or friction handled",
+          "description": "Evaluate whether the agent noticed and responded appropriately to frustration, confusion, repeated objections, pricing pressure, callback demands, or requests needing human intervention.",
+          "category": "risk",
+          "successSignals": [
+            "I understand",
+            "team member",
+            "human",
+            "call back",
+            "help you with that"
+          ],
+          "failureSignals": [
+            "frustrated",
+            "angry",
+            "confused",
+            "pricing",
+            "complaint",
+            "call me back"
+          ],
+          "recommendation": "Add a recovery branch for frustrated or high-intent callers so the agent acknowledges the concern and routes it to a human.",
+          "promptGuidance": "If the caller sounds frustrated, asks for pricing, or requests a human, acknowledge it and create a clear callback/handoff.",
+          "requiresHumanReview": true,
+          "useActionType": "Human review",
+          "enabled": true
+        }
+      ],
+      "createdAt": "2026-05-31T13:23:12.306Z",
+      "updatedAt": "2026-05-31T13:23:12.306Z"
+    },
+    {
+      "id": "default-lead-qualification-v3",
+      "name": "Default lead qualification",
+      "versionLabel": "v3",
+      "description": "A reusable starter checklist for judging whether a Voice AI agent captured the caller need, contact details, urgency, next step, and human-review signals.",
+      "sourceTemplateId": "default-lead-qualification-v1",
+      "parameters": [
+        {
+          "id": "project-need-captured",
+          "title": "Project or issue need captured",
+          "description": "Evaluate whether the agent clearly identified why the caller contacted the business and captured the core project, service need, or issue in enough detail for a human team member to act.",
+          "category": "qualification",
+          "successSignals": [
+            "need",
+            "issue",
+            "project",
+            "looking for",
+            "interested in",
+            "problem"
+          ],
+          "failureSignals": [
+            "not sure why they called",
+            "no issue captured",
+            "unclear request"
+          ],
+          "recommendation": "Update the agent objective or script to ask one direct question about the caller need before moving to next steps.",
+          "promptGuidance": "Ask: \"What would you like help with today?\" Then summarize the need back in one short sentence.",
+          "requiresHumanReview": false,
+          "useActionType": "",
+          "enabled": true
+        },
+        {
+          "id": "contact-details-captured",
+          "title": "Contact details captured",
+          "description": "Evaluate whether the agent captured the caller name and at least one usable contact method or confirmed that HighLevel already has enough contact information.",
+          "category": "intake",
+          "successSignals": [
+            "name",
+            "phone",
+            "email",
+            "contact",
+            "spell"
+          ],
+          "failureSignals": [
+            "no name",
+            "no contact",
+            "cannot call back"
+          ],
+          "recommendation": "Add an explicit contact capture step before the call closes, including name confirmation when needed.",
+          "promptGuidance": "Before ending the call, confirm the caller name and the best callback number or email.",
+          "requiresHumanReview": true,
+          "useActionType": "Contact follow-up",
+          "enabled": true
+        },
+        {
+          "id": "timeline-urgency-qualified",
+          "title": "Timeline and urgency qualified",
+          "description": "Evaluate whether the agent asked when the caller needs help, whether the request is urgent, or whether there is a preferred callback/service timeline.",
+          "category": "qualification",
+          "successSignals": [
+            "today",
+            "tomorrow",
+            "this week",
+            "next week",
+            "urgent",
+            "timeline",
+            "when"
+          ],
+          "failureSignals": [
+            "no timeline",
+            "unclear urgency",
+            "call back sometime"
+          ],
+          "recommendation": "Coach the agent to ask one timing question so the team can prioritize the lead or support request.",
+          "promptGuidance": "Ask: \"When are you hoping to get this handled?\" or \"Is this urgent or flexible?\"",
+          "requiresHumanReview": false,
+          "useActionType": "",
+          "enabled": true
+        },
+        {
+          "id": "next-step-confirmed",
+          "title": "Clear next step confirmed",
+          "description": "Evaluate whether the agent ended with a concrete next step, such as a callback owner, appointment, expected follow-up window, or human handoff.",
+          "category": "handoff",
+          "successSignals": [
+            "call you back",
+            "follow up",
+            "appointment",
+            "scheduled",
+            "team member",
+            "next step"
+          ],
+          "failureSignals": [
+            "no next step",
+            "ended abruptly",
+            "unclear follow-up"
+          ],
+          "recommendation": "Update the script so every successful intake call closes with who will follow up and when.",
+          "promptGuidance": "End with: \"A team member will follow up [timeframe] about [caller need].\"",
+          "requiresHumanReview": true,
+          "useActionType": "Follow-up review",
+          "enabled": true
+        },
+        {
+          "id": "caller-risk-or-friction-detected",
+          "title": "Caller risk or friction handled",
+          "description": "Evaluate whether the agent noticed and responded appropriately to frustration, confusion, repeated objections, pricing pressure, callback demands, or requests needing human intervention.",
+          "category": "risk",
+          "successSignals": [
+            "I understand",
+            "team member",
+            "human",
+            "call back",
+            "help you with that"
+          ],
+          "failureSignals": [
+            "frustrated",
+            "angry",
+            "confused",
+            "pricing",
+            "complaint",
+            "call me back"
+          ],
+          "recommendation": "Add a recovery branch for frustrated or high-intent callers so the agent acknowledges the concern and routes it to a human.",
+          "promptGuidance": "If the caller sounds frustrated, asks for pricing, or requests a human, acknowledge it and create a clear callback/handoff.",
+          "requiresHumanReview": true,
+          "useActionType": "Human review",
+          "enabled": true
+        }
+      ],
+      "createdAt": "2026-05-31T13:26:48.180Z",
+      "updatedAt": "2026-05-31T13:26:48.180Z"
+    },
+    {
+      "id": "after-service-agent-v1",
+      "name": "after service agent",
+      "versionLabel": "v1",
+      "description": "this agent will take care of the after service call",
+      "sourceTemplateId": "default-lead-qualification-v1",
+      "parameters": [],
+      "createdAt": "2026-05-31T14:18:24.683Z",
+      "updatedAt": "2026-05-31T14:18:24.683Z"
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 <script setup>
-import { Activity, BookOpen, ExternalLink, Settings } from '@lucide/vue';
+import { Activity } from '@lucide/vue';
 
 defineProps({
   activeView: {
@@ -40,19 +40,5 @@ defineEmits(['set-view']);
       </button>
     </nav>
 
-    <div class="sidebar-footer">
-      <button class="sidebar-footer-link" type="button">
-        <Settings :size="18" />
-        <span>Settings</span>
-      </button>
-      <button class="sidebar-footer-link" type="button">
-        <BookOpen :size="18" />
-        <span>Documentation</span>
-      </button>
-      <button class="sidebar-footer-link" type="button">
-        <ExternalLink :size="18" />
-        <span>Open in browser</span>
-      </button>
-    </div>
   </aside>
 </template>

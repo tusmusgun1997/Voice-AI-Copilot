@@ -1,9 +1,8 @@
 <script setup>
-import { ArrowLeft, BarChart3, FileText, Lightbulb, PhoneCall, SlidersHorizontal, Target, UserRoundCog } from '@lucide/vue';
+import { ArrowLeft, BarChart3, ClipboardCheck, Lightbulb, SlidersHorizontal } from '@lucide/vue';
+import AgentActionsSection from './AgentActionsSection.vue';
 import AgentDetailsSection from './AgentDetailsSection.vue';
-import AgentGoalsSection from './AgentGoalsSection.vue';
-import AgentProfileSection from './AgentProfileSection.vue';
-import AgentPromptSection from './AgentPromptSection.vue';
+import AgentReviewSection from './AgentReviewSection.vue';
 import ObservabilityParametersSection from './ObservabilityParametersSection.vue';
 
 defineProps({
@@ -47,6 +46,10 @@ defineProps({
     type: Object,
     required: true
   },
+  parameterVersions: {
+    type: Array,
+    default: () => []
+  },
   profileEditError: {
     type: String,
     default: ''
@@ -75,15 +78,16 @@ defineProps({
 
 defineEmits([
   'add-observability-criterion',
+  'apply-parameter-version',
   'back-to-agents',
   'cancel-edit-agent',
   'cancel-edit-observability-profile',
   'open-agent-section',
+  'open-llm-parameters',
   'remove-observability-criterion',
   'save-agent',
   'save-observability-profile',
   'show-agent-calls',
-  'show-agent-recommendations',
   'show-call',
   'start-edit-agent',
   'start-edit-observability-profile'
@@ -91,10 +95,9 @@ defineEmits([
 
 const detailTabs = [
   { id: 'details', label: 'Info', icon: BarChart3 },
-  { id: 'agent-profile', label: 'Agent profile', icon: UserRoundCog },
-  { id: 'highlevel-goals', label: 'HighLevel goals', icon: Target },
   { id: 'observability-parameters', label: 'Observability parameters', icon: SlidersHorizontal },
-  { id: 'prompt', label: 'Prompt', icon: FileText }
+  { id: 'recommendations', label: 'Recommendations', icon: Lightbulb },
+  { id: 'actions', label: 'Actions', icon: ClipboardCheck }
 ];
 </script>
 
@@ -113,38 +116,7 @@ const detailTabs = [
         <small>{{ selectedAgentPanel.businessName || 'HighLevel voice agent' }}</small>
       </div>
 
-      <div class="agent-detail-actions">
-        <button class="text-button compact" type="button" @click="$emit('show-agent-calls', selectedAgentPanel.id)">
-          <PhoneCall :size="15" />
-          Calls
-        </button>
-        <button class="text-button compact" type="button" @click="$emit('show-agent-recommendations', selectedAgentPanel.id)">
-          <Lightbulb :size="15" />
-          Recommendations
-        </button>
-      </div>
     </header>
-
-    <div class="agent-detail-stat-strip">
-      <div>
-        <span>Average score</span>
-        <strong :class="helpers.scoreClass(selectedAgentPanel.averageScore)">
-          {{ helpers.formatScore(selectedAgentPanel.averageScore) }}
-        </strong>
-      </div>
-      <div>
-        <span>Calls</span>
-        <strong>{{ selectedAgentPanel.callCount }}</strong>
-      </div>
-      <div>
-        <span>Issues</span>
-        <strong>{{ selectedAgentPanel.issueCount }}</strong>
-      </div>
-      <div>
-        <span>Human actions</span>
-        <strong>{{ selectedAgentPanel.useActionCount }}</strong>
-      </div>
-    </div>
 
     <nav class="agent-page-tabs" aria-label="Agent sections">
       <button
@@ -162,14 +134,6 @@ const detailTabs = [
     <section class="agent-detail-content">
       <AgentDetailsSection
         v-if="activeAgentSection === 'details'"
-        :helpers="helpers"
-        :selected-agent-panel="selectedAgentPanel"
-        @show-agent-calls="$emit('show-agent-calls', $event)"
-        @show-call="$emit('show-call', $event)"
-      />
-
-      <AgentProfileSection
-        v-else-if="activeAgentSection === 'agent-profile'"
         :agent-drafts="agentDrafts"
         :agent-edit-error="agentEditError"
         :agent-edit-message="agentEditMessage"
@@ -179,44 +143,37 @@ const detailTabs = [
         :selected-agent-panel="selectedAgentPanel"
         @cancel-edit-agent="$emit('cancel-edit-agent')"
         @save-agent="$emit('save-agent', $event)"
+        @show-agent-calls="$emit('show-agent-calls', $event)"
+        @show-call="$emit('show-call', $event)"
         @start-edit-agent="$emit('start-edit-agent', $event)"
       />
 
-      <AgentGoalsSection
-        v-else-if="activeAgentSection === 'highlevel-goals'"
+      <AgentReviewSection
+        v-else-if="activeAgentSection === 'recommendations'"
+        :helpers="helpers"
         :selected-agent-panel="selectedAgentPanel"
+        @open-agent-section="$emit('open-agent-section', $event)"
+        @show-call="$emit('show-call', $event)"
       />
 
       <ObservabilityParametersSection
         v-else-if="activeAgentSection === 'observability-parameters'"
-        :editing-observability-stage="editingObservabilityStage"
-        :editing-profile-agent-id="editingProfileAgentId"
         :loading-profile-agent-id="loadingProfileAgentId"
-        :observability-profile-drafts="observabilityProfileDrafts"
+        :parameter-versions="parameterVersions"
         :profile-edit-error="profileEditError"
         :profile-edit-message="profileEditMessage"
         :saving-profile-agent-id="savingProfileAgentId"
         :selected-agent-panel="selectedAgentPanel"
         :selected-observability-profile="selectedObservabilityProfile"
-        @add-observability-criterion="$emit('add-observability-criterion', $event)"
-        @cancel-edit-observability-profile="$emit('cancel-edit-observability-profile')"
-        @remove-observability-criterion="$emit('remove-observability-criterion', $event.agentId, $event.parameterId)"
-        @save-observability-profile="$emit('save-observability-profile', $event)"
-        @start-edit-observability-profile="$emit('start-edit-observability-profile', $event)"
+        @apply-parameter-version="$emit('apply-parameter-version', $event)"
+        @open-llm-parameters="$emit('open-llm-parameters', $event)"
       />
 
-      <AgentPromptSection
+      <AgentActionsSection
         v-else
-        :agent-drafts="agentDrafts"
-        :agent-edit-error="agentEditError"
-        :agent-edit-message="agentEditMessage"
-        :editing-agent-id="editingAgentId"
         :helpers="helpers"
-        :saving-agent-id="savingAgentId"
         :selected-agent-panel="selectedAgentPanel"
-        @cancel-edit-agent="$emit('cancel-edit-agent')"
-        @save-agent="$emit('save-agent', $event)"
-        @start-edit-agent="$emit('start-edit-agent', $event)"
+        @show-call="$emit('show-call', $event)"
       />
     </section>
   </section>

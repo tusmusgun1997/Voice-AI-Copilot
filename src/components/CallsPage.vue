@@ -7,6 +7,10 @@ const props = defineProps({
     type: Array,
     required: true
   },
+  analyzingCallIds: {
+    type: Object,
+    default: () => ({})
+  },
   callDetails: {
     type: Function,
     required: true
@@ -31,17 +35,13 @@ const props = defineProps({
     type: String,
     required: true
   },
-  syncingAnalyses: {
-    type: Boolean,
-    default: false
-  },
   totalCallCount: {
     type: Number,
     required: true
   }
 });
 
-defineEmits(['select-agent', 'show-agent-recommendations', 'sync-call-analyses', 'toggle-call']);
+defineEmits(['analyze-call', 'select-agent', 'show-agent-recommendations', 'toggle-call']);
 
 const analysisByCallId = computed(() => {
   const map = new Map();
@@ -56,16 +56,6 @@ const analysisByCallId = computed(() => {
 
   return map;
 });
-
-const filteredCallIds = computed(() => new Set(props.filteredCalls.map((call) => call.id)));
-
-const visibleAnalysisJobs = computed(() =>
-  props.llmAnalyses
-    .filter((analysis) => isActiveAnalysis(analysis) || filteredCallIds.value.has(analysis.callId))
-    .slice()
-    .sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0))
-    .slice(0, 5)
-);
 
 const callOnlyAgentCount = computed(() => {
   const activeAgentIds = new Set(props.agentDirectory.map((agent) => agent.id));
@@ -123,6 +113,25 @@ function analysisScore(analysis, fallbackScore) {
 function isActiveAnalysis(analysis) {
   return ['queued', 'running', 'retrying'].includes(analysis?.status);
 }
+
+function isCallAnalyzing(call) {
+  return Boolean(props.analyzingCallIds?.[call.id]) || isActiveAnalysis(callAnalysis(call));
+}
+
+function targetTypeLabel(type) {
+  const labels = {
+    agent_profile: 'Agent profile',
+    highlevel_goal: 'HighLevel goal',
+    observability_parameter: 'Observability parameter'
+  };
+
+  return labels[type] ?? 'Observability parameter';
+}
+
+function targetActionLabel(recommendation) {
+  const action = recommendation?.targetAction === 'add' ? 'Add' : 'Update';
+  return `${action} ${targetTypeLabel(recommendation?.targetType).toLowerCase()}`;
+}
 </script>
 
 <template>
@@ -133,26 +142,8 @@ function isActiveAnalysis(analysis) {
         <h2>Call timeline</h2>
       </div>
       <div class="workspace-heading-actions">
-        <button class="detail-button secondary" type="button" :disabled="syncingAnalyses" @click="$emit('sync-call-analyses')">
-          {{ syncingAnalyses ? 'Syncing...' : 'Analyze latest' }}
-        </button>
         <span>{{ filteredCalls.length }} calls</span>
       </div>
-    </div>
-
-    <div v-if="visibleAnalysisJobs.length" class="analysis-job-strip" aria-label="Background LLM analysis jobs">
-      <span>LLM background analysis</span>
-      <article
-        v-for="analysis in visibleAnalysisJobs"
-        :key="analysis.jobId || analysis.callId"
-        :class="analysisClass(analysis)"
-      >
-        <strong>{{ analysisLabel(analysis) }}</strong>
-        <small>
-          {{ helpers.displayAgentName(analysis.agentId, analysis.agentName) }}
-          <template v-if="analysis.attempts"> - attempt {{ analysis.attempts }}/{{ analysis.maxAttempts || analysis.attempts }}</template>
-        </small>
-      </article>
     </div>
 
     <p v-if="callOnlyAgentCount > 0" class="call-history-note">
@@ -254,7 +245,17 @@ function isActiveAnalysis(analysis) {
             </section>
 
             <section class="call-detail-cell">
-              <p class="eyebrow">LLM Analysis</p>
+              <div class="call-cell-heading">
+                <p class="eyebrow">LLM Analysis</p>
+                <button
+                  class="text-button compact"
+                  type="button"
+                  :disabled="isCallAnalyzing(call)"
+                  @click="$emit('analyze-call', call)"
+                >
+                  {{ isCallAnalyzing(call) ? 'Analyzing...' : callAnalysis(call).status ? 'Analyze again' : 'Analyze call' }}
+                </button>
+              </div>
               <div class="analysis-detail-block" :class="analysisClass(callAnalysis(call))">
                 <span>{{ analysisLabel(callAnalysis(call)) }}</span>
                 <strong>{{ helpers.formatScore(analysisScore(callAnalysis(call), null)) }}</strong>
@@ -302,6 +303,36 @@ function isActiveAnalysis(analysis) {
               </div>
             </section>
 
+            <section class="call-detail-cell full-span">
+              <p class="eyebrow">Recommendations</p>
+              <div class="call-recommendation-list">
+                <article v-for="recommendation in callDetails(call.id).recommendations" :key="recommendation.id">
+                  <div class="review-item-top">
+                    <span class="severity-pill" :class="helpers.severityClass(recommendation.severity)">
+                      {{ helpers.formatSeverity(recommendation.severity) }}
+                    </span>
+                    <small>{{ targetActionLabel(recommendation) }}</small>
+                  </div>
+                  <strong>{{ recommendation.title }}</strong>
+                  <p>{{ recommendation.detail }}</p>
+                  <div v-if="recommendation.suggestedChange || recommendation.promptPatch" class="review-suggestion">
+                    <span>Suggested change for human review</span>
+                    <p>{{ recommendation.suggestedChange || recommendation.promptPatch }}</p>
+                  </div>
+                  <div class="review-item-footer">
+                    <span>Needs human review</span>
+                    <button class="text-button compact" type="button" @click="$emit('show-agent-recommendations', call.agentId)">
+                      Open agent review
+                    </button>
+                  </div>
+                </article>
+
+                <p v-if="callDetails(call.id).recommendations.length === 0" class="empty-copy">
+                  No LLM recommendations are attached to this call yet.
+                </p>
+              </div>
+            </section>
+
             <section class="call-detail-cell">
               <p class="eyebrow">Review Items</p>
               <div class="call-review-list">
@@ -313,7 +344,7 @@ function isActiveAnalysis(analysis) {
                     <strong>{{ issue.label }}</strong>
                     <p>{{ issue.message }}</p>
                     <button class="text-button compact" type="button" @click="$emit('show-agent-recommendations', call.agentId)">
-                      View fix
+                      Open agent review
                     </button>
                   </div>
                 </article>
@@ -330,7 +361,7 @@ function isActiveAnalysis(analysis) {
                     <strong>{{ action.type }}</strong>
                     <p>{{ action.reason }}</p>
                     <button class="text-button compact" type="button" @click="$emit('show-agent-recommendations', call.agentId)">
-                      Open recommendation
+                      Open agent review
                     </button>
                   </div>
                 </article>

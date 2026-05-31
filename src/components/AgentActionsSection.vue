@@ -1,0 +1,55 @@
+<script setup>
+import { computed } from 'vue';
+
+const props = defineProps({
+  helpers: {
+    type: Object,
+    required: true
+  },
+  selectedAgentPanel: {
+    type: Object,
+    required: true
+  }
+});
+
+defineEmits(['show-call']);
+
+const humanActions = computed(() =>
+  (props.selectedAgentPanel.useActions ?? []).filter((action) => action.source === 'llm')
+);
+</script>
+
+<template>
+  <section class="agent-section">
+    <header class="agent-section-head">
+      <div>
+        <p class="eyebrow">Actions</p>
+        <h3>Human follow-up queue</h3>
+        <p>
+          Caller requests, callbacks, escalations, and script-training actions suggested by the LLM.
+        </p>
+      </div>
+      <span class="section-count-pill">{{ humanActions.length }} open</span>
+    </header>
+
+    <div class="review-action-list">
+      <button v-for="action in humanActions" :key="action.id" type="button" @click="$emit('show-call', action.callId)">
+        <span class="severity-dot" :class="action.severity"></span>
+        <div>
+          <strong>{{ action.type || 'Human review' }}</strong>
+          <small>
+            {{ action.contactName || 'Call review' }} - {{ helpers.formatDate(action.createdAt) }}
+          </small>
+          <p>{{ action.reason }}</p>
+          <p v-if="action.snippet" class="action-snippet">{{ action.snippet }}</p>
+        </div>
+      </button>
+
+      <section v-if="humanActions.length === 0" class="parameter-empty-state compact">
+        <span>No actions</span>
+        <h4>No LLM-suggested human actions yet</h4>
+        <p>When a call needs a callback, escalation, or training follow-up, it will appear here.</p>
+      </section>
+    </div>
+  </section>
+</template>

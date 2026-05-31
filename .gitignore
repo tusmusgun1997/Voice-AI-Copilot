@@ -4,8 +4,7 @@ dist/
 .env.*
 !.env.example
 npm-debug.log*
-cloudflared.*.log
-localtunnel.*.log
+*.log
 coverage/
 .DS_Store
 config/agent-goals.json

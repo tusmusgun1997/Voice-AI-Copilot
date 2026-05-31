@@ -1,12 +1,16 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
 import { defaultGoalProfile } from './agentGoals.js';
+import { DEFAULT_LOCAL_DATA_FILE, readCollection, writeCollection } from './localDataStore.js';
+import { getParameterVersion } from './parameterVersions.js';
 
-const DEFAULT_PROFILES_FILE = 'data/agent-observability-profiles.json';
+const DEFAULT_PROFILES_FILE = DEFAULT_LOCAL_DATA_FILE;
+const DEFAULT_VERSIONS_FILE = DEFAULT_LOCAL_DATA_FILE;
 
-export async function loadObservabilityProfiles(filePath = DEFAULT_PROFILES_FILE) {
+export async function loadObservabilityProfiles(filePath = DEFAULT_PROFILES_FILE, versionsFilePath = DEFAULT_VERSIONS_FILE) {
   const customProfiles = await readProfiles(filePath);
-  const profiles = [defaultGoalProfile, ...customProfiles.map((profile) => normalizeProfile(profile, { useDefaults: false }))];
+  const resolvedProfiles = await Promise.all(
+    customProfiles.map((profile) => resolveVersionedProfile(normalizeProfile(profile, { useDefaults: false }), versionsFilePath))
+  );
+  const profiles = [defaultGoalProfile, ...resolvedProfiles];
 
   return {
     profiles,
@@ -20,13 +24,22 @@ export async function listSavedObservabilityProfiles(filePath = DEFAULT_PROFILES
   };
 }
 
-export async function getAgentObservabilityProfile(agent, filePath = DEFAULT_PROFILES_FILE) {
+export async function getAgentObservabilityProfile(
+  agent,
+  filePath = DEFAULT_PROFILES_FILE,
+  versionsFilePath = DEFAULT_VERSIONS_FILE
+) {
   const profiles = (await readProfiles(filePath)).map((profile) => normalizeProfile(profile, { useDefaults: false }));
   const existing = findProfileForAgent(profiles, agent);
-  return existing ?? createEmptyAgentProfile(agent);
+  return resolveVersionedProfile(existing ?? createEmptyAgentProfile(agent), versionsFilePath);
 }
 
-export async function saveAgentObservabilityProfile(agentId, profile, filePath = DEFAULT_PROFILES_FILE) {
+export async function saveAgentObservabilityProfile(
+  agentId,
+  profile,
+  filePath = DEFAULT_PROFILES_FILE,
+  versionsFilePath = DEFAULT_VERSIONS_FILE
+) {
   if (!agentId) {
     const error = new Error('Missing agentId');
     error.status = 400;
@@ -45,7 +58,7 @@ export async function saveAgentObservabilityProfile(agentId, profile, filePath =
   const nextProfiles = profiles.filter((item) => !(item.agentIds ?? []).includes(agentId));
   nextProfiles.push(toStorageProfile(normalized));
   await writeProfiles(nextProfiles, filePath);
-  return normalized;
+  return resolveVersionedProfile(normalized, versionsFilePath);
 }
 
 function createEmptyAgentProfile(agent = {}) {
@@ -59,6 +72,8 @@ function createEmptyAgentProfile(agent = {}) {
     scriptSummary: '',
     goals: [],
     negativeSignals: [],
+    parameterVersionId: '',
+    parameterVersionName: '',
     parameters: [],
     criteria: []
   }, { useDefaults: false });
@@ -73,28 +88,15 @@ function findProfileForAgent(profiles, agent = {}) {
 }
 
 async function readProfiles(filePath) {
-  const resolvedPath = resolveProfilePath(filePath);
-
   try {
-    const content = await fs.readFile(resolvedPath, 'utf8');
-    const parsed = JSON.parse(content);
-    if (Array.isArray(parsed)) return parsed;
-    if (Array.isArray(parsed?.profiles)) return parsed.profiles;
-    return [];
+    return readCollection(filePath, 'profiles');
   } catch (error) {
-    if (error.code === 'ENOENT') return [];
     throw new Error(`Unable to load observability profiles: ${error.message}`);
   }
 }
 
 async function writeProfiles(profiles, filePath) {
-  const resolvedPath = resolveProfilePath(filePath);
-  await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
-  await fs.writeFile(resolvedPath, `${JSON.stringify({ profiles }, null, 2)}\n`, 'utf8');
-}
-
-function resolveProfilePath(filePath = DEFAULT_PROFILES_FILE) {
-  return path.resolve(process.cwd(), filePath || DEFAULT_PROFILES_FILE);
+  await writeCollection(filePath, 'profiles', profiles);
 }
 
 function normalizeProfile(profile = {}, options = {}) {
@@ -110,10 +112,31 @@ function normalizeProfile(profile = {}, options = {}) {
     scriptSummary: cleanString(profile.scriptSummary) || (useDefaults ? defaultGoalProfile.scriptSummary : ''),
     goals: asStringArray(profile.goals),
     negativeSignals: asStringArray(profile.negativeSignals),
+    parameterVersionId: cleanString(profile.parameterVersionId),
+    parameterVersionName: cleanString(profile.parameterVersionName),
+    parameterVersionDescription: cleanString(profile.parameterVersionDescription),
     parameters,
     criteria,
     configured: Boolean(profile.configured ?? isProfileConfigured({ ...profile, parameters, criteria }))
   };
+}
+
+async function resolveVersionedProfile(profile, versionsFilePath) {
+  if (!profile?.parameterVersionId) return profile;
+
+  const version = await getParameterVersion(profile.parameterVersionId, versionsFilePath);
+  if (!version) return profile;
+
+  return normalizeProfile(
+    {
+      ...profile,
+      parameterVersionName: `${version.name} ${version.versionLabel}`.trim(),
+      parameterVersionDescription: version.description,
+      parameters: version.parameters,
+      criteria: []
+    },
+    { useDefaults: false }
+  );
 }
 
 function normalizeCriteria(criteria, options = {}) {

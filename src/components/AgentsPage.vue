@@ -1,5 +1,5 @@
 <script setup>
-import { FileText, Info, Lightbulb, MoreVertical, PhoneCall, SlidersHorizontal, Target, UserRoundCog } from '@lucide/vue';
+import { ClipboardCheck, Info, Lightbulb, MoreVertical, SlidersHorizontal } from '@lucide/vue';
 import { ref } from 'vue';
 
 defineProps({
@@ -15,7 +15,6 @@ defineProps({
 
 const emit = defineEmits([
   'open-agent-page',
-  'show-agent-calls',
   'show-agent-recommendations'
 ]);
 
@@ -28,11 +27,6 @@ function toggleAgentMenu(agentId) {
 function openAgentSection(agentId, section) {
   openMenuAgentId.value = '';
   emit('open-agent-page', { agentId, section });
-}
-
-function openAgentCalls(agentId) {
-  openMenuAgentId.value = '';
-  emit('show-agent-calls', agentId);
 }
 
 function openAgentRecommendations(agentId) {
@@ -52,12 +46,19 @@ function openAgentRecommendations(agentId) {
     </header>
 
     <div class="agent-directory clean-list">
-      <article v-for="agent in agentDirectory" :key="agent.id" class="agent-list-row">
+      <article
+        v-for="agent in agentDirectory"
+        :key="agent.id"
+        class="agent-list-row"
+        :class="{ 'requires-setup': agent.needsParameterVersion }"
+      >
         <button class="agent-list-main" type="button" @click="openAgentSection(agent.id, 'details')">
           <span class="agent-avatar">{{ helpers.agentInitials(agent.displayName) }}</span>
           <span class="agent-title">
             <strong>{{ agent.displayName }}</strong>
             <small>{{ agent.goalProfileName || agent.businessName || 'Voice AI agent' }}</small>
+            <span v-if="agent.needsParameterVersion" class="agent-setup-pill">Attach LLM parameters</span>
+            <span v-else-if="agent.parameterVersionName" class="agent-version-pill">{{ agent.parameterVersionName }}</span>
           </span>
           <span class="agent-row-insights">
             <span>
@@ -93,32 +94,33 @@ function openAgentRecommendations(agentId) {
               <Info :size="16" />
               <span>Check info</span>
             </button>
-            <button type="button" role="menuitem" @click="openAgentSection(agent.id, 'agent-profile')">
-              <UserRoundCog :size="16" />
-              <span>Agent profile</span>
-            </button>
-            <button type="button" role="menuitem" @click="openAgentSection(agent.id, 'highlevel-goals')">
-              <Target :size="16" />
-              <span>HighLevel goals</span>
-            </button>
             <button type="button" role="menuitem" @click="openAgentSection(agent.id, 'observability-parameters')">
               <SlidersHorizontal :size="16" />
               <span>Observability parameters</span>
-            </button>
-            <button type="button" role="menuitem" @click="openAgentSection(agent.id, 'prompt')">
-              <FileText :size="16" />
-              <span>Prompt</span>
-            </button>
-            <button type="button" role="menuitem" @click="openAgentCalls(agent.id)">
-              <PhoneCall :size="16" />
-              <span>Calls</span>
             </button>
             <button type="button" role="menuitem" @click="openAgentRecommendations(agent.id)">
               <Lightbulb :size="16" />
               <span>Recommendations</span>
             </button>
+            <button type="button" role="menuitem" @click="openAgentSection(agent.id, 'actions')">
+              <ClipboardCheck :size="16" />
+              <span>Actions</span>
+            </button>
           </div>
         </div>
+
+        <button
+          v-if="agent.needsParameterVersion"
+          class="agent-required-banner"
+          type="button"
+          @click="openAgentSection(agent.id, 'observability-parameters')"
+        >
+          <SlidersHorizontal :size="16" />
+          <span>
+            <strong>Attach LLM parameters</strong>
+            <small>This agent needs a reusable checklist before LLM call review can run.</small>
+          </span>
+        </button>
       </article>
 
       <section v-if="agentDirectory.length === 0" class="empty-directory">

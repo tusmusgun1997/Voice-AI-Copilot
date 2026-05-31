@@ -1,5 +1,0 @@
-
-> voice-ai-observability-copilot@0.1.0 server
-> node server/index.js
-
-Voice AI Observability backend listening on http://localhost:3001

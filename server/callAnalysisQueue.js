@@ -1,7 +1,13 @@
 import { upsertCallAnalysis } from './analysisStore.js';
-import { fetchVoiceAiAgents, fetchVoiceAiCallLogs } from './highlevelClient.js';
+import { fetchVoiceAiAgent, fetchVoiceAiAgents, fetchVoiceAiCallLogs } from './highlevelClient.js';
 import { analyzeCallWithOpenAI } from './llmCallAnalyzer.js';
 import { getAgentObservabilityProfile } from './observabilityProfiles.js';
+import {
+  insertSupabaseWebhookEvent,
+  isSupabaseStoreEnabled,
+  listSupabaseAnalysisJobs,
+  upsertSupabaseAnalysisJob
+} from './services/supabaseStore.js';
 
 const DEFAULT_MAX_ATTEMPTS = 5;
 const DEFAULT_RETRY_DELAY_MS = 12000;
@@ -20,19 +26,28 @@ export function createCallAnalysisQueue(config = {}) {
       throw error;
     }
 
+    const webhookEvent = isSupabaseStoreEnabled()
+      ? await insertSupabaseWebhookEvent({
+          eventType: payload.type ?? payload.eventType ?? queuedReason,
+          ...ids
+        })
+      : null;
     const job = {
       id: `job-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       ...ids,
+      webhookEventId: webhookEvent?.id || '',
       eventType: cleanString(payload.type ?? payload.eventType ?? queuedReason),
       queuedReason,
       attempts: 0,
       maxAttempts: resolveMaxAttempts(config),
       status: 'queued',
+      stage: 'analysis_pending',
       queuedAt: new Date().toISOString()
     };
 
     jobs.push(job);
     jobStatus.set(job.id, job);
+    await persistJob(job);
 
     await upsertCallAnalysis(
       {
@@ -53,7 +68,11 @@ export function createCallAnalysisQueue(config = {}) {
     return job;
   }
 
-  function listJobs() {
+  async function listJobs() {
+    if (isSupabaseStoreEnabled()) {
+      return listSupabaseAnalysisJobs();
+    }
+
     return Array.from(jobStatus.values()).sort((a, b) => new Date(b.queuedAt) - new Date(a.queuedAt));
   }
 
@@ -73,12 +92,14 @@ export function createCallAnalysisQueue(config = {}) {
     const attempts = Number(job.attempts || 0) + 1;
     markJob(job, {
       status: 'running',
+      stage: 'analysis_running',
       attempts,
       maxAttempts: job.maxAttempts || resolveMaxAttempts(config),
       lastAttemptAt: new Date().toISOString(),
       startedAt: job.startedAt || new Date().toISOString(),
       nextRetryAt: null
     });
+    await persistJob(job);
 
     try {
       await upsertCallAnalysis(
@@ -109,7 +130,8 @@ export function createCallAnalysisQueue(config = {}) {
           id: call.agentId || job.agentId,
           name: agent?.name || call.agentName
         },
-        config.observabilityProfilesFile
+        config.observabilityProfilesFile,
+        config.parameterVersionsFile
       );
 
       const analysis = await analyzeCallWithOpenAI({
@@ -147,6 +169,7 @@ export function createCallAnalysisQueue(config = {}) {
       );
 
       markJob(job, { status: analysis.status, completedAt: new Date().toISOString() });
+      await persistJob(job);
     } catch (error) {
       if (shouldRetry(error, job)) {
         await scheduleRetry(job, error, config);
@@ -172,9 +195,11 @@ export function createCallAnalysisQueue(config = {}) {
 
       markJob(job, {
         status: 'failed',
+        stage: 'analysis_failed',
         errorMessage: error.message,
         completedAt: new Date().toISOString()
       });
+      await persistJob(job);
       console.error(`Call analysis job failed for callId=${job.callId}: ${error.message}`);
     }
   }
@@ -185,9 +210,11 @@ export function createCallAnalysisQueue(config = {}) {
 
     markJob(job, {
       status: 'retrying',
+      stage: error.stage || 'waiting_for_call_log',
       errorMessage: error.message,
       nextRetryAt
     });
+    await persistJob(job);
 
     await upsertCallAnalysis(
       {
@@ -260,6 +287,20 @@ async function fetchAgentForCall(call, config) {
   if (!call.agentId) return null;
 
   try {
+    const result = await fetchVoiceAiAgent({
+      token: config.highLevelToken,
+      locationId: call.locationId || config.locationId,
+      agentId: call.agentId,
+      version: config.highLevelVersion,
+      baseUrl: config.highLevelBaseUrl
+    });
+
+    return normalizeAgent(result.agent);
+  } catch {
+    // Fall back to the list endpoint when the detailed agent endpoint is missing a scope.
+  }
+
+  try {
     const result = await fetchVoiceAiAgents({
       token: config.highLevelToken,
       locationId: call.locationId || config.locationId,
@@ -296,7 +337,17 @@ function normalizeCall(raw) {
 function normalizeAgent(raw) {
   return {
     id: getId(raw),
-    name: raw.agentName ?? raw.name ?? raw.title ?? 'Voice AI Agent'
+    name: raw.agentName ?? raw.name ?? raw.title ?? 'Voice AI Agent',
+    businessName: raw.businessName ?? '',
+    welcomeMessage: raw.welcomeMessage ?? '',
+    agentPrompt: raw.agentPrompt ?? raw.prompt ?? '',
+    description: raw.description ?? '',
+    language: raw.language ?? '',
+    timezone: raw.timezone ?? '',
+    maxCallDuration: raw.maxCallDuration ?? null,
+    voiceId: raw.voiceId ?? '',
+    actions: Array.isArray(raw.actions) ? raw.actions : [],
+    raw
   };
 }
 
@@ -318,16 +369,23 @@ function normalizeTranscript(transcript) {
 }
 
 function decorateRecommendations(recommendations, call) {
-  return recommendations.map((recommendation, index) => ({
-    id: `${call.id}-llm-rec-${index + 1}`,
-    callId: call.id,
-    agentId: call.agentId,
-    title: recommendation.title,
-    detail: recommendation.detail,
-    severity: recommendation.severity,
-    promptPatch: recommendation.promptGuidance,
-    parameterId: recommendation.parameterId
-  }));
+  return recommendations
+    .filter((recommendation) => ['critical', 'warning'].includes(String(recommendation?.severity || '').toLowerCase()))
+    .map((recommendation, index) => ({
+      id: `${call.id}-llm-rec-${index + 1}`,
+      callId: call.id,
+      agentId: call.agentId,
+      title: recommendation.title,
+      detail: recommendation.detail,
+      severity: recommendation.severity,
+      promptPatch: recommendation.promptGuidance,
+      parameterId: recommendation.parameterId,
+      targetType: recommendation.targetType || 'observability_parameter',
+      targetAction: recommendation.targetAction || 'update',
+      targetId: recommendation.targetId || recommendation.parameterId || '',
+      suggestedChange: recommendation.suggestedChange || recommendation.promptGuidance || recommendation.detail || '',
+      reviewStatus: recommendation.reviewStatus || 'needs_human_review'
+    }));
 }
 
 function decorateUseActions(useActions, call) {
@@ -364,6 +422,14 @@ function getId(item) {
 
 function markJob(job, patch) {
   Object.assign(job, patch);
+}
+
+async function persistJob(job) {
+  try {
+    await upsertSupabaseAnalysisJob(job);
+  } catch (error) {
+    console.error(`Unable to persist analysis job ${job.id}: ${error.message}`);
+  }
 }
 
 function shouldRetry(error, job) {

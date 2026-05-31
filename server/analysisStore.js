@@ -1,7 +1,6 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
+import { DEFAULT_LOCAL_DATA_FILE, readCollection, writeCollection } from './localDataStore.js';
 
-const DEFAULT_RESULTS_FILE = 'data/call-analysis-results.json';
+const DEFAULT_RESULTS_FILE = DEFAULT_LOCAL_DATA_FILE;
 let writeLock = Promise.resolve();
 
 export async function listCallAnalyses(filePath = DEFAULT_RESULTS_FILE) {
@@ -40,24 +39,15 @@ export async function upsertCallAnalysis(record, filePath = DEFAULT_RESULTS_FILE
 }
 
 async function readStore(filePath) {
-  const resolvedPath = resolveStorePath(filePath);
-
   try {
-    const content = await fs.readFile(resolvedPath, 'utf8');
-    const parsed = JSON.parse(content);
-    if (Array.isArray(parsed)) return parsed.map(normalizeRecord);
-    if (Array.isArray(parsed?.analyses)) return parsed.analyses.map(normalizeRecord);
-    return [];
+    return (await readCollection(filePath, 'analyses')).map(normalizeRecord);
   } catch (error) {
-    if (error.code === 'ENOENT') return [];
     throw new Error(`Unable to load call analysis results: ${error.message}`);
   }
 }
 
 async function writeStore(analyses, filePath) {
-  const resolvedPath = resolveStorePath(filePath);
-  await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
-  await fs.writeFile(resolvedPath, `${JSON.stringify({ analyses }, null, 2)}\n`, 'utf8');
+  await writeCollection(filePath, 'analyses', analyses);
 }
 
 function normalizeRecord(record = {}) {
@@ -95,10 +85,6 @@ function analysisId(record) {
   const locationId = cleanString(record.locationId) || 'location';
   const callId = cleanString(record.callId) || `call-${Date.now()}`;
   return `analysis-${locationId}-${callId}`;
-}
-
-function resolveStorePath(filePath = DEFAULT_RESULTS_FILE) {
-  return path.resolve(process.cwd(), filePath || DEFAULT_RESULTS_FILE);
 }
 
 function cleanString(value) {

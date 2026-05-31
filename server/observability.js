@@ -205,6 +205,11 @@ function buildUnanalyzedCall(call, goalProfile, analysisState, dataQuality) {
         title: 'Retry analysis later',
         detail: issue.recommendation,
         promptPatch: null,
+        targetType: 'observability_parameter',
+        targetAction: 'update',
+        targetId: analysisState,
+        suggestedChange: 'Wait for the transcript before changing the agent setup.',
+        reviewStatus: 'needs_human_review',
         confidence: 'high',
         severity: 'info',
         sourceIssueId: issue.id
@@ -282,6 +287,11 @@ function buildRecommendations(issues, missedOpportunities, score, call) {
       title: 'Review this call in QA',
       detail: `Prioritize ${call.agentName}; this call missed multiple KPI checkpoints.`,
       promptPatch: null,
+      targetType: 'agent_profile',
+      targetAction: 'update',
+      targetId: call.agentId,
+      suggestedChange: 'Review the agent profile and prompt against the missed call behaviors before editing.',
+      reviewStatus: 'needs_human_review',
       confidence: 'high',
       severity: 'critical',
       sourceIssueId: null
@@ -294,6 +304,11 @@ function buildRecommendations(issues, missedOpportunities, score, call) {
       title: issue.label,
       detail: issue.recommendation,
       promptPatch: issue.promptPatch,
+      targetType: 'agent_profile',
+      targetAction: 'update',
+      targetId: call.agentId,
+      suggestedChange: issue.promptPatch ?? issue.recommendation,
+      reviewStatus: 'needs_human_review',
       confidence: issue.confidence,
       severity: issue.severity,
       sourceIssueId: issue.id
@@ -307,24 +322,16 @@ function buildRecommendations(issues, missedOpportunities, score, call) {
       detail: opportunity.recommendation,
       promptPatch:
         'When a caller expresses buying, scheduling, quote, or pricing intent, ask one closing question and offer a concrete next step.',
+      targetType: 'agent_profile',
+      targetAction: 'update',
+      targetId: call.agentId,
+      suggestedChange:
+        'When a caller expresses buying, scheduling, quote, or pricing intent, ask one closing question and offer a concrete next step.',
+      reviewStatus: 'needs_human_review',
       confidence: 'medium',
       severity: opportunity.severity,
       sourceIssueId: opportunity.id
     });
-  }
-
-  if (recommendations.length === 0) {
-    return [
-      {
-        id: `${call.id}-keep-path`,
-        title: 'Keep current script path',
-        detail: 'The call met the configured observability checks and produced a clear caller outcome.',
-        promptPatch: null,
-        confidence: 'high',
-        severity: 'info',
-        sourceIssueId: null
-      }
-    ];
   }
 
   return recommendations;

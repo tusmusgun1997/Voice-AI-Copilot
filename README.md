@@ -12,6 +12,7 @@ A HighLevel Voice AI observability suite that monitors call transcripts, scores 
 
 - **Backend:** Node.js, Express
 - **Frontend:** Vue 3, Vite
+- **Persistence:** local JSON by default, optional Supabase Postgres for demo hosting
 - **HighLevel API:** Private Integration Token for local development, OAuth-ready app path for Marketplace installation
 
 ## Sandbox Prerequisites
@@ -49,8 +50,13 @@ GHL_CLIENT_SECRET=
 GHL_OAUTH_REDIRECT_URL=https://your-public-url.example.com/api/oauth/callback
 GHL_OAUTH_USER_TYPE=Location
 AGENT_GOALS_FILE=config/agent-goals.json
-OBSERVABILITY_PROFILES_FILE=data/agent-observability-profiles.json
-CALL_ANALYSIS_RESULTS_FILE=data/call-analysis-results.json
+DATA_STORE=json
+LOCAL_DATA_FILE=data/app-data.json
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
+SUPABASE_DB_URL=
+SUPABASE_INSTALLATION_NAME=Voice AI Test Location
+SUPABASE_IS_SANDBOX=true
 USE_DEMO_DATA_WHEN_EMPTY=true
 SHOW_DELETED_AGENT_CALLS=false
 OPENAI_API_KEY=
@@ -62,6 +68,8 @@ ANALYSIS_JOB_RETRY_DELAY_MS=12000
 Set `GHL_CALL_TYPE=TRIAL` when you want the dashboard to focus on sandbox Web Call / test-call logs. Leave it blank or use `LIVE` for production phone calls.
 
 Set `SHOW_DELETED_AGENT_CALLS=false` to hide historical HighLevel call logs whose agent no longer exists in the live Voice AI agent list.
+
+For Supabase storage, run the SQL in `database/supabase-demo-schema.sql`, set `DATA_STORE=supabase`, and fill `SUPABASE_URL` plus `SUPABASE_SERVICE_ROLE_KEY`. Keep the service-role key backend-only. If you want to apply the schema from the repo, set `SUPABASE_DB_URL` temporarily and run `npm run db:schema`.
 
 ## Agent Goal Configuration
 
@@ -108,17 +116,6 @@ Then open:
 http://localhost:3001
 ```
 
-## Temporary Tunnel For HighLevel Demo
-
-For a quick sandbox demo, run the app locally and expose the Vite frontend with Cloudflare Tunnel:
-
-```bash
-npm run dev
-npx --yes cloudflared tunnel --url http://localhost:5173 --no-autoupdate
-```
-
-Use the generated `https://*.trycloudflare.com` URL as the HighLevel Custom Page URL. Keep your laptop awake and both the dev server and tunnel running while reviewers test it.
-
 ## Useful API Routes
 
 ```text
@@ -126,8 +123,8 @@ GET /api/health
 GET /api/call-logs
 GET /api/call-analyses
 GET /api/call-analyses/:callId
+POST /api/call-analyses/:callId/analyze
 GET /api/analysis-jobs
-POST /api/call-analyses/sync-latest
 GET /api/agent-goals
 GET /api/observability
 POST /api/webhooks/voice-ai-call-end
@@ -135,22 +132,21 @@ POST /api/webhooks/voice-ai-call-end
 
 `/api/observability` returns the normalized dashboard payload used by the Vue frontend.
 
-`POST /api/webhooks/voice-ai-call-end` now enqueues an async local analysis job. The worker fetches the call from HighLevel by `callId`, loads the agent's local observability parameters, asks OpenAI for a structured judgment, and stores the lightweight result in `data/call-analysis-results.json`.
+`POST /api/call-analyses/:callId/analyze` lets the UI enqueue LLM review for one selected call. `POST /api/webhooks/voice-ai-call-end` uses the same worker for webhook-driven analysis. The worker fetches the call from HighLevel by `callId`, loads the agent's observability parameters, asks OpenAI for a structured judgment, and stores the lightweight result in the configured data store.
 
-For sandbox testing, `POST /api/call-analyses/sync-latest` scans recent HighLevel calls and enqueues any call that does not already have a local LLM result.
+For local development, app-managed data is stored in one JSON file: `data/app-data.json`. It contains `profiles`, `versions`, and `analyses`. For hosted demos, set `DATA_STORE=supabase` to use Supabase Postgres tables instead.
 
 ## HighLevel Integration
 
 For the MVP demo:
 
-1. Run the local app with `npm run dev`.
-2. Expose the Vite URL with a tunnel such as ngrok or Cloudflare Tunnel.
-3. In the Marketplace app, add a **Custom Page** pointing to the public frontend URL.
-4. In **Advanced Settings > Auth**, add the OAuth redirect URL as `<public-url>/api/oauth/callback`.
-5. In **Manage > Secrets**, create/copy the Client ID and Client Secret, then add them to `.env`.
-6. Set `GHL_OAUTH_REDIRECT_URL` in `.env` to the exact same redirect URL configured in HighLevel.
-7. Add the required scopes, save the app, and create/update a testable app version.
-8. Install the private app into the sandbox location using the Developer Portal test link.
+1. Deploy or run the app so HighLevel can reach a public frontend URL.
+2. In the Marketplace app, add a **Custom Page** pointing to that public frontend URL.
+3. In **Advanced Settings > Auth**, add the OAuth redirect URL as `<public-url>/api/oauth/callback`.
+4. In **Manage > Secrets**, create/copy the Client ID and Client Secret, then add them to `.env`.
+5. Set `GHL_OAUTH_REDIRECT_URL` in `.env` to the exact same redirect URL configured in HighLevel.
+6. Add the required scopes, save the app, and create/update a testable app version.
+7. Install the private app into the sandbox location using the Developer Portal test link.
 
 For production-style app installation, replace the local PIT with the OAuth install flow and store location access tokens per installed sub-account.
 
@@ -173,7 +169,7 @@ Mocked or demo-backed:
 - If the sandbox has zero Voice AI calls, the dashboard falls back to demo calls so the review flow is visible.
 - The dashboard still includes deterministic local scoring for immediate visibility.
 - OpenAI analysis requires `OPENAI_API_KEY`; without it, webhook jobs are stored as failed until the key is added.
-- No app-user/customer database is used in the sandbox version; local storage is limited to agent parameters and call-analysis outcomes keyed by HighLevel IDs.
+- No app-user/customer database is used in the sandbox version; app storage is limited to agent parameters and call-analysis outcomes keyed by HighLevel IDs.
 
 ## Team Of One Notes
 

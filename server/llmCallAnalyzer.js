@@ -25,9 +25,31 @@ export async function analyzeCallWithOpenAI({ apiKey, model = DEFAULT_OPENAI_MOD
     agent: {
       id: agent?.id || call.agentId,
       name: agent?.name || call.agentName,
-      objective: profile?.scriptSummary || '',
-      goals: profile?.goals ?? [],
-      riskSignals: profile?.negativeSignals ?? []
+      highLevelProfile: {
+        businessName: agent?.businessName || '',
+        welcomeMessage: agent?.welcomeMessage || '',
+        agentPrompt: agent?.agentPrompt || agent?.description || '',
+        language: agent?.language || '',
+        timezone: agent?.timezone || '',
+        maxCallDuration: agent?.maxCallDuration ?? null
+      },
+      highLevelGoals: (agent?.actions ?? []).map((action) => ({
+        id: action.id || '',
+        name: action.name || '',
+        actionType: action.actionType || action.type || '',
+        description:
+          action.actionParameters?.description ||
+          action.actionParameters?.triggerPrompt ||
+          action.actionParameters?.message ||
+          action.actionParameters?.stopBotTriggerCondition ||
+          ''
+      })),
+      observabilityProfile: {
+        label: profile?.name || '',
+        objective: profile?.scriptSummary || '',
+        successGoals: profile?.goals ?? [],
+        riskSignals: profile?.negativeSignals ?? []
+      }
     },
     call: {
       id: call.id,
@@ -64,7 +86,7 @@ export async function analyzeCallWithOpenAI({ apiKey, model = DEFAULT_OPENAI_MOD
             {
               type: 'input_text',
               text:
-                'You are an observability evaluator for HighLevel Voice AI calls. Judge the transcript only against the configured parameters. Return concise, evidence-backed JSON. Do not invent transcript evidence.'
+                'You are an observability evaluator for HighLevel Voice AI calls. Judge the transcript against the agent profile, HighLevel goals/actions, and configured observability parameters. Return concise, evidence-backed JSON. Recommendations are an exception queue: only include a recommendation when a parameter failed/unknown, the agent setup has a material gap, or a human should review a concrete change. Do not create praise, confirmation, "continue doing this", or best-practice recommendations when the call was handled well. If no change is needed, return recommendations: [] and useActions: []. Recommend adding/updating observability parameters when the evaluation checklist is incomplete, adding/updating HighLevel goals when the agent action setup should change, and updating the agent profile when the role/objective/script needs clearer guidance. Do not invent transcript evidence.'
             }
           ]
         },
@@ -160,11 +182,37 @@ function analysisSchema() {
             detail: { type: 'string' },
             severity: {
               type: 'string',
-              enum: ['critical', 'warning', 'info']
+              enum: ['critical', 'warning']
             },
             promptGuidance: { type: 'string' }
+            ,
+            targetType: {
+              type: 'string',
+              enum: ['agent_profile', 'highlevel_goal', 'observability_parameter']
+            },
+            targetAction: {
+              type: 'string',
+              enum: ['add', 'update']
+            },
+            targetId: { type: 'string' },
+            suggestedChange: { type: 'string' },
+            reviewStatus: {
+              type: 'string',
+              enum: ['needs_human_review']
+            }
           },
-          required: ['parameterId', 'title', 'detail', 'severity', 'promptGuidance']
+          required: [
+            'parameterId',
+            'title',
+            'detail',
+            'severity',
+            'promptGuidance',
+            'targetType',
+            'targetAction',
+            'targetId',
+            'suggestedChange',
+            'reviewStatus'
+          ]
         }
       },
       useActions: {
@@ -194,15 +242,50 @@ function analysisSchema() {
 }
 
 function normalizeAnalysis(analysis) {
+  const parameterResults = analysis.parameterResults ?? [];
+  const parameterStatusById = new Map(
+    parameterResults.map((result) => [result.parameterId, String(result.status || '').toLowerCase()])
+  );
+  const hasProblemResult = parameterResults.some((result) =>
+    ['failed', 'unknown'].includes(String(result.status || '').toLowerCase())
+  );
+
   return {
     status: 'succeeded',
     stage: analysis.stage,
     score: analysis.score,
     summary: analysis.summary,
-    parameterResults: analysis.parameterResults ?? [],
-    recommendations: analysis.recommendations ?? [],
+    parameterResults,
+    recommendations: (analysis.recommendations ?? [])
+      .filter((recommendation) =>
+        shouldKeepRecommendation(recommendation, {
+          hasProblemResult,
+          parameterStatusById,
+          stage: analysis.stage
+        })
+      )
+      .map((recommendation) => ({
+        ...recommendation,
+        targetType: recommendation.targetType || 'observability_parameter',
+        targetAction: recommendation.targetAction || 'update',
+        targetId: recommendation.targetId || recommendation.parameterId || '',
+        suggestedChange: recommendation.suggestedChange || recommendation.promptGuidance || recommendation.detail || '',
+        reviewStatus: recommendation.reviewStatus || 'needs_human_review'
+      })),
     useActions: analysis.useActions ?? []
   };
+}
+
+function shouldKeepRecommendation(recommendation, context) {
+  const severity = String(recommendation?.severity || '').toLowerCase();
+  if (!['critical', 'warning'].includes(severity)) return false;
+
+  const parameterStatus = context.parameterStatusById.get(recommendation?.parameterId);
+  if (parameterStatus === 'passed') return false;
+
+  if (context.stage === 'healthy' && !context.hasProblemResult) return false;
+
+  return Boolean(recommendation?.title || recommendation?.detail || recommendation?.suggestedChange);
 }
 
 function extractOutputText(body) {

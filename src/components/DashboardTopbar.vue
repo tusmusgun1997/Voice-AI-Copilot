@@ -27,8 +27,8 @@ const descriptions = {
   Overview: 'Track the full loop from call transcripts to issues, actions, and agent improvements.',
   Agents: 'Manage Voice AI agents, prompts, observability parameters, and operating details.',
   Calls: 'Review transcript logs, scoring signals, issues, and use actions by agent.',
-  Recommendations: 'Prioritize prompt updates, training opportunities, and human follow-up work.',
-  Setup: 'Check HighLevel connection health, data source state, and analysis configuration.'
+  Actions: 'Review caller-facing follow-ups, escalations, and training actions suggested from calls.',
+  'LLM Parameters': 'Create reusable, versioned transcript evaluation checklists for agents.'
 };
 
 const subtitle = computed(() => descriptions[props.activeViewTitle] ?? 'Monitor Voice AI performance inside HighLevel.');
