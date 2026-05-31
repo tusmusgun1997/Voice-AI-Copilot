@@ -24,6 +24,7 @@ const error = ref('');
 const dashboard = ref(null);
 const selectedAgent = ref('all');
 const activeView = ref('overview');
+const sidebarCollapsed = ref(false);
 const expandedAgentId = ref('');
 const agentRouteId = ref('');
 const expandedCallId = ref('');
@@ -1103,8 +1104,14 @@ const helpers = {
 </script>
 
 <template>
-  <main class="app-frame">
-    <AppSidebar :active-view="activeView" :nav-items="navItems" @set-view="setView" />
+  <main class="app-frame" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
+    <AppSidebar
+      :active-view="activeView"
+      :collapsed="sidebarCollapsed"
+      :nav-items="navItems"
+      @set-view="setView"
+      @toggle-sidebar="sidebarCollapsed = !sidebarCollapsed"
+    />
 
     <section class="content-shell">
       <DashboardTopbar

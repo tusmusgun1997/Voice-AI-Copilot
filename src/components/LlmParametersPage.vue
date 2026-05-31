@@ -338,22 +338,70 @@ function splitList(value) {
 
 <template>
   <section class="llm-parameters-page">
-    <header class="workspace-list-heading">
-      <div>
-        <p class="eyebrow">LLM parameters</p>
-        <h2>Reusable parameter versions</h2>
-        <p>
-          Build transcript evaluation checklists once, version them, and attach the right version to each agent.
-        </p>
+    <section v-if="loading" class="llm-loading-screen" aria-busy="true">
+      <header class="workspace-list-heading">
+        <div>
+          <p class="eyebrow">LLM parameters</p>
+          <h2>Loading parameter versions</h2>
+          <p>Fetching reusable transcript evaluation checklists from the API.</p>
+        </div>
+        <div class="workspace-heading-actions">
+          <span>Loading</span>
+        </div>
+      </header>
+
+      <div class="llm-loading-workbench">
+        <aside class="llm-loading-rail">
+          <div v-for="item in 3" :key="item" class="loading-version-card">
+            <span class="skeleton-line tiny"></span>
+            <span class="skeleton-line strong"></span>
+            <span class="skeleton-line short"></span>
+          </div>
+        </aside>
+
+        <article class="llm-loading-detail">
+          <div class="loading-detail-head">
+            <div>
+              <span class="skeleton-line tiny"></span>
+              <span class="skeleton-line title"></span>
+              <span class="skeleton-line wide"></span>
+            </div>
+            <span class="skeleton-button"></span>
+          </div>
+
+          <div class="loading-detail-body">
+            <div class="loading-parameter-list">
+              <span v-for="item in 4" :key="item" class="skeleton-row"></span>
+            </div>
+            <div class="loading-parameter-copy">
+              <span class="skeleton-line tiny"></span>
+              <span class="skeleton-line title"></span>
+              <span class="skeleton-line wide"></span>
+              <span class="skeleton-line wide"></span>
+              <span class="skeleton-line mid"></span>
+            </div>
+          </div>
+        </article>
       </div>
-      <div class="workspace-heading-actions">
-        <span>{{ versions.length }} versions</span>
-        <button class="text-button compact primary" type="button" @click="openCreateModal()">
-          <Plus :size="15" />
-          New version
-        </button>
-      </div>
-    </header>
+    </section>
+
+    <template v-else>
+      <header class="workspace-list-heading">
+        <div>
+          <p class="eyebrow">LLM parameters</p>
+          <h2>Reusable parameter versions</h2>
+          <p>
+            Build transcript evaluation checklists once, version them, and attach the right version to each agent.
+          </p>
+        </div>
+        <div class="workspace-heading-actions">
+          <span>{{ versions.length }} versions</span>
+          <button class="text-button compact primary" type="button" @click="openCreateModal()">
+            <Plus :size="15" />
+            New version
+          </button>
+        </div>
+      </header>
 
     <teleport to="body">
       <div v-if="createModalOpen" class="parameter-create-backdrop" @click.self="closeCreateModal">
@@ -446,11 +494,7 @@ function splitList(value) {
       {{ message }}
     </section>
 
-    <section v-if="loading" class="loading-state inline">
-      Loading LLM parameter versions
-    </section>
-
-    <section v-else class="parameter-version-workbench">
+    <section class="parameter-version-workbench">
       <aside class="parameter-version-rail">
         <button
           v-for="version in versions"
@@ -641,5 +685,6 @@ function splitList(value) {
         </div>
       </article>
     </section>
+    </template>
   </section>
 </template>

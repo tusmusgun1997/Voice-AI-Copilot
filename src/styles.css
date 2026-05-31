@@ -455,6 +455,144 @@
   gap: 18px;
 }
 
+.llm-loading-screen {
+  display: grid;
+  gap: 18px;
+}
+
+.llm-loading-workbench {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.32fr) minmax(0, 1fr);
+  gap: 20px;
+  min-height: 520px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px;
+  background: #ffffff;
+}
+
+.llm-loading-rail,
+.loading-parameter-list,
+.loading-parameter-copy,
+.loading-version-card {
+  display: grid;
+  gap: 10px;
+}
+
+.loading-version-card {
+  align-content: start;
+  min-height: 106px;
+  border: 1px solid #e5eaf1;
+  border-radius: 12px;
+  padding: 14px;
+  background: #fbfcfe;
+}
+
+.llm-loading-detail {
+  display: grid;
+  gap: 22px;
+  min-width: 0;
+  border-left: 1px solid #edf1f6;
+  padding-left: 20px;
+}
+
+.loading-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  border-bottom: 1px solid #edf1f6;
+  padding-bottom: 18px;
+}
+
+.loading-detail-head > div {
+  display: grid;
+  width: min(680px, 100%);
+  gap: 10px;
+}
+
+.loading-detail-body {
+  display: grid;
+  grid-template-columns: minmax(210px, 0.34fr) minmax(0, 1fr);
+  gap: 20px;
+}
+
+.loading-parameter-list {
+  border-right: 1px solid #edf1f6;
+  padding-right: 20px;
+}
+
+.skeleton-line,
+.skeleton-row,
+.skeleton-button {
+  position: relative;
+  overflow: hidden;
+  display: block;
+  border-radius: 999px;
+  background: #eef2f7;
+}
+
+.skeleton-row {
+  height: 58px;
+  border-radius: 10px;
+}
+
+.skeleton-button {
+  flex: 0 0 auto;
+  width: 132px;
+  height: 34px;
+  border-radius: 8px;
+}
+
+.skeleton-line {
+  width: 100%;
+  height: 12px;
+}
+
+.skeleton-line.tiny {
+  width: 96px;
+  height: 10px;
+}
+
+.skeleton-line.strong {
+  width: 78%;
+  height: 18px;
+}
+
+.skeleton-line.short {
+  width: 46%;
+}
+
+.skeleton-line.title {
+  width: 52%;
+  height: 22px;
+}
+
+.skeleton-line.wide {
+  width: 92%;
+}
+
+.skeleton-line.mid {
+  width: 66%;
+}
+
+.skeleton-line::after,
+.skeleton-row::after,
+.skeleton-button::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.76), transparent);
+  transform: translateX(-100%);
+  animation: skeleton-sheen 1.35s ease-in-out infinite;
+}
+
+@keyframes skeleton-sheen {
+  to {
+    transform: translateX(100%);
+  }
+}
+
 .parameter-version-create,
 .parameter-version-selector {
   display: grid;
@@ -829,6 +967,11 @@ textarea:focus-visible {
   grid-template-columns: 272px minmax(0, 1fr);
   min-height: 100vh;
   background: #f3f4f6;
+  transition: grid-template-columns 180ms ease;
+}
+
+.app-frame.sidebar-collapsed {
+  grid-template-columns: 84px minmax(0, 1fr);
 }
 
 .app-sidebar {
@@ -839,6 +982,14 @@ textarea:focus-visible {
   border-right: 1px solid #d9dde5;
   padding: 22px 16px;
   background: #eef0f3;
+  overflow: hidden;
+  transition:
+    padding 180ms ease,
+    background-color 180ms ease;
+}
+
+.app-sidebar.collapsed {
+  padding: 18px 12px;
 }
 
 .sidebar-brand,
@@ -858,10 +1009,41 @@ textarea:focus-visible {
   align-items: center;
 }
 
-.sidebar-brand {
+.sidebar-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 10px;
   min-height: 44px;
   margin-bottom: 30px;
+}
+
+.sidebar-brand {
+  gap: 10px;
+  min-height: 44px;
+  min-width: 0;
+  margin-bottom: 0;
+  transition: opacity 160ms ease;
+}
+
+.sidebar-toggle {
+  display: inline-grid;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid #d2d8e2;
+  border-radius: 9px;
+  color: #30343b;
+  background: rgba(255, 255, 255, 0.72);
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(20, 25, 34, 0.04);
+}
+
+.sidebar-toggle:hover {
+  border-color: #b6bfcc;
+  background: #ffffff;
+  transform: translateY(-1px);
 }
 
 .brand-mark,
@@ -891,6 +1073,16 @@ textarea:focus-visible {
   display: block;
   color: var(--muted);
   font-size: 0.78rem;
+}
+
+.app-sidebar.collapsed .sidebar-top-row {
+  justify-content: center;
+}
+
+.app-sidebar.collapsed .sidebar-brand,
+.app-sidebar.collapsed .sidebar-section-label,
+.app-sidebar.collapsed .nav-item span {
+  display: none;
 }
 
 .sidebar-section-label {
@@ -923,6 +1115,13 @@ textarea:focus-visible {
   text-align: left;
 }
 
+.app-sidebar.collapsed .nav-item {
+  grid-template-columns: 1fr;
+  justify-items: center;
+  min-height: 42px;
+  padding: 0;
+}
+
 .nav-item:hover,
 .nav-item.active {
   border-color: transparent;
@@ -948,6 +1147,9 @@ textarea:focus-visible {
   border: 1px solid #d9dde5;
   border-radius: 16px;
   padding: 28px 42px 46px;
+  transition:
+    margin 180ms ease,
+    padding 180ms ease;
   background: #ffffff;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
