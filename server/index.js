@@ -59,12 +59,15 @@ const controllers = {
   agents: createAgentController({ highLevelService }),
   observability: createObservabilityController({ dashboardService }),
   observabilityProfiles: createObservabilityProfileController({
-    agentGoalsFile: config.agentGoalsFile,
     localDataFile: config.localDataFile
   }),
   parameterVersions: createParameterVersionController({ localDataFile: config.localDataFile }),
   oauth: createOAuthController({ oauthConfig: config.oauth }),
-  webhooks: createWebhookController({ analysisQueue })
+  webhooks: createWebhookController({
+    analysisQueue,
+    localDataFile: config.localDataFile,
+    locationId: config.highLevel.locationId
+  })
 };
 
 app.use(cors());

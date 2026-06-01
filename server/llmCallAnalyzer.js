@@ -33,17 +33,7 @@ export async function analyzeCallWithOpenAI({ apiKey, model = DEFAULT_OPENAI_MOD
         timezone: agent?.timezone || '',
         maxCallDuration: agent?.maxCallDuration ?? null
       },
-      highLevelGoals: (agent?.actions ?? []).map((action) => ({
-        id: action.id || '',
-        name: action.name || '',
-        actionType: action.actionType || action.type || '',
-        description:
-          action.actionParameters?.description ||
-          action.actionParameters?.triggerPrompt ||
-          action.actionParameters?.message ||
-          action.actionParameters?.stopBotTriggerCondition ||
-          ''
-      })),
+      agentPrompt: agent?.agentPrompt || agent?.description || '',
       observabilityProfile: {
         label: profile?.name || '',
         objective: profile?.scriptSummary || '',
@@ -56,7 +46,11 @@ export async function analyzeCallWithOpenAI({ apiKey, model = DEFAULT_OPENAI_MOD
       createdAt: call.createdAt,
       durationSeconds: call.durationSeconds,
       summary: call.summary,
-      transcript: call.transcript
+      transcript: call.transcript,
+      history: {
+        summary: call.summary || '',
+        transcript: call.transcript || ''
+      }
     },
     parameters: parameters.map((parameter) => ({
       id: parameter.id,
@@ -86,7 +80,7 @@ export async function analyzeCallWithOpenAI({ apiKey, model = DEFAULT_OPENAI_MOD
             {
               type: 'input_text',
               text:
-                'You are an observability evaluator for HighLevel Voice AI calls. Judge the transcript against the agent profile, HighLevel goals/actions, and configured observability parameters. Return concise, evidence-backed JSON. Recommendations are an exception queue: only include a recommendation when a parameter failed/unknown, the agent setup has a material gap, or a human should review a concrete change. Do not create praise, confirmation, "continue doing this", or best-practice recommendations when the call was handled well. If no change is needed, return recommendations: [] and useActions: []. Recommend adding/updating observability parameters when the evaluation checklist is incomplete, adding/updating HighLevel goals when the agent action setup should change, and updating the agent profile when the role/objective/script needs clearer guidance. Do not invent transcript evidence.'
+                'You are an observability evaluator for HighLevel Voice AI calls. Judge the call history/transcript against only the configured observability parameters and the current agent prompt. Return concise, evidence-backed JSON. You must return exactly one parameterResults item for every configured parameter id. Use status "passed" only when the transcript clearly satisfies that parameter, "failed" when it clearly misses it, "not_applicable" when it does not apply to this call, and "unknown" when evidence is insufficient. Create useActions only for failed or unknown parameters that need a human decision, caller follow-up, script training, agent profile update, or observability parameter update. Use category "customer" only for caller-facing actions such as contacting the customer, answering something the customer asked, callback, escalation, or follow-up. Use category "system" for internal setup improvements such as prompt updates, observability parameter updates, script training, or agent profile changes. Each action must include a concrete suggestion that a human can apply, ignore, or delete. If all parameters passed or are not applicable and no human work is needed, return useActions: []. Do not create praise or "continue doing this" items. Do not invent transcript evidence.'
             }
           ]
         },
@@ -129,7 +123,7 @@ export async function analyzeCallWithOpenAI({ apiKey, model = DEFAULT_OPENAI_MOD
     throw new Error('OpenAI response did not contain valid JSON analysis.');
   }
 
-  return normalizeAnalysis(analysis);
+  return normalizeAnalysis(analysis, parameters);
 }
 
 function analysisSchema() {
@@ -171,50 +165,6 @@ function analysisSchema() {
           required: ['parameterId', 'title', 'status', 'confidence', 'evidence', 'reasoningSummary']
         }
       },
-      recommendations: {
-        type: 'array',
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          properties: {
-            parameterId: { type: 'string' },
-            title: { type: 'string' },
-            detail: { type: 'string' },
-            severity: {
-              type: 'string',
-              enum: ['critical', 'warning']
-            },
-            promptGuidance: { type: 'string' }
-            ,
-            targetType: {
-              type: 'string',
-              enum: ['agent_profile', 'highlevel_goal', 'observability_parameter']
-            },
-            targetAction: {
-              type: 'string',
-              enum: ['add', 'update']
-            },
-            targetId: { type: 'string' },
-            suggestedChange: { type: 'string' },
-            reviewStatus: {
-              type: 'string',
-              enum: ['needs_human_review']
-            }
-          },
-          required: [
-            'parameterId',
-            'title',
-            'detail',
-            'severity',
-            'promptGuidance',
-            'targetType',
-            'targetAction',
-            'targetId',
-            'suggestedChange',
-            'reviewStatus'
-          ]
-        }
-      },
       useActions: {
         type: 'array',
         items: {
@@ -222,33 +172,42 @@ function analysisSchema() {
           additionalProperties: false,
           properties: {
             parameterId: { type: 'string' },
+            title: { type: 'string' },
             type: {
               type: 'string',
-              enum: ['human_review', 'script_training', 'follow_up']
+              enum: ['human_review', 'script_training', 'follow_up', 'prompt_update', 'parameter_update']
+            },
+            category: {
+              type: 'string',
+              enum: ['customer', 'system']
             },
             reason: { type: 'string' },
+            suggestion: { type: 'string' },
             snippet: { type: 'string' },
             severity: {
               type: 'string',
               enum: ['critical', 'warning', 'info']
+            },
+            targetType: {
+              type: 'string',
+              enum: ['agent_profile', 'observability_parameter', 'human_follow_up']
+            },
+            targetId: { type: 'string' },
+            status: {
+              type: 'string',
+              enum: ['open']
             }
           },
-          required: ['parameterId', 'type', 'reason', 'snippet', 'severity']
+          required: ['parameterId', 'title', 'type', 'category', 'reason', 'suggestion', 'snippet', 'severity', 'targetType', 'targetId', 'status']
         }
       }
     },
-    required: ['stage', 'score', 'summary', 'parameterResults', 'recommendations', 'useActions']
+    required: ['stage', 'score', 'summary', 'parameterResults', 'useActions']
   };
 }
 
-function normalizeAnalysis(analysis) {
-  const parameterResults = analysis.parameterResults ?? [];
-  const parameterStatusById = new Map(
-    parameterResults.map((result) => [result.parameterId, String(result.status || '').toLowerCase()])
-  );
-  const hasProblemResult = parameterResults.some((result) =>
-    ['failed', 'unknown'].includes(String(result.status || '').toLowerCase())
-  );
+function normalizeAnalysis(analysis, parameters = []) {
+  const parameterResults = completeParameterResults(analysis.parameterResults ?? [], parameters);
 
   return {
     status: 'succeeded',
@@ -256,36 +215,127 @@ function normalizeAnalysis(analysis) {
     score: analysis.score,
     summary: analysis.summary,
     parameterResults,
-    recommendations: (analysis.recommendations ?? [])
-      .filter((recommendation) =>
-        shouldKeepRecommendation(recommendation, {
-          hasProblemResult,
-          parameterStatusById,
-          stage: analysis.stage
-        })
-      )
-      .map((recommendation) => ({
-        ...recommendation,
-        targetType: recommendation.targetType || 'observability_parameter',
-        targetAction: recommendation.targetAction || 'update',
-        targetId: recommendation.targetId || recommendation.parameterId || '',
-        suggestedChange: recommendation.suggestedChange || recommendation.promptGuidance || recommendation.detail || '',
-        reviewStatus: recommendation.reviewStatus || 'needs_human_review'
-      })),
-    useActions: analysis.useActions ?? []
+    recommendations: [],
+    useActions: normalizeUseActions(analysis.useActions ?? [], parameterResults, parameters)
   };
 }
 
-function shouldKeepRecommendation(recommendation, context) {
-  const severity = String(recommendation?.severity || '').toLowerCase();
-  if (!['critical', 'warning'].includes(severity)) return false;
+function completeParameterResults(results, parameters) {
+  const byId = new Map((results ?? []).map((result) => [result.parameterId, result]));
 
-  const parameterStatus = context.parameterStatusById.get(recommendation?.parameterId);
-  if (parameterStatus === 'passed') return false;
+  return parameters.map((parameter) => {
+    const result = byId.get(parameter.id);
 
-  if (context.stage === 'healthy' && !context.hasProblemResult) return false;
+    return {
+      parameterId: parameter.id,
+      title: result?.title || parameter.title || parameter.id,
+      status: normalizeParameterStatus(result?.status),
+      confidence: normalizeConfidence(result?.confidence),
+      evidence: result?.evidence || '',
+      reasoningSummary: result?.reasoningSummary || 'No parameter-level judgment was returned by the LLM.'
+    };
+  });
+}
 
-  return Boolean(recommendation?.title || recommendation?.detail || recommendation?.suggestedChange);
+function normalizeUseActions(actions, parameterResults, parameters) {
+  const parametersById = new Map(parameters.map((parameter) => [parameter.id, parameter]));
+  const resultById = new Map(parameterResults.map((result) => [result.parameterId, result]));
+  const normalized = (actions ?? [])
+    .filter((action) => {
+      const result = resultById.get(action.parameterId);
+      const status = String(result?.status || '').toLowerCase();
+      return ['failed', 'unknown'].includes(status);
+    })
+    .map((action) => normalizeAction(action, parametersById.get(action.parameterId)));
+
+  const actionParameterIds = new Set(normalized.map((action) => action.parameterId));
+  const fallbackActions = parameterResults
+    .filter((result) => ['failed', 'unknown'].includes(String(result.status || '').toLowerCase()))
+    .filter((result) => !actionParameterIds.has(result.parameterId))
+    .map((result) => fallbackActionForResult(result, parametersById.get(result.parameterId)));
+
+  return [...normalized, ...fallbackActions];
+}
+
+function normalizeAction(action, parameter = {}) {
+  const type = normalizeActionType(action.type, parameter);
+  const targetType = normalizeTargetType(action.targetType, parameter);
+
+  return {
+    parameterId: action.parameterId || parameter.id || '',
+    title: action.title || parameter.title || 'Human review needed',
+    type,
+    category: normalizeActionCategory(action.category, type, targetType),
+    reason: action.reason || 'This call needs human review before changing the agent setup.',
+    suggestion: action.suggestion || parameter.promptGuidance || parameter.recommendation || 'Review the call and decide whether to update the agent prompt or observability parameter.',
+    snippet: action.snippet || '',
+    severity: normalizeSeverity(action.severity),
+    targetType,
+    targetId: action.targetId || parameter.id || '',
+    status: 'open'
+  };
+}
+
+function fallbackActionForResult(result, parameter = {}) {
+  const isUnknown = result.status === 'unknown';
+
+  return {
+    parameterId: result.parameterId,
+    title: isUnknown ? `Review ${result.title}` : `Fix ${result.title}`,
+    type: parameter.requiresHumanReview ? parameter.useActionType || 'human_review' : 'script_training',
+    category: actionCategoryFromSignals(
+      parameter.requiresHumanReview ? parameter.useActionType || 'human_review' : 'script_training',
+      parameter.promptGuidance ? 'agent_profile' : 'observability_parameter'
+    ),
+    reason: result.reasoningSummary || result.evidence || 'The LLM flagged this parameter for review.',
+    suggestion: parameter.promptGuidance || parameter.recommendation || 'Review the transcript and update the prompt or checklist if the miss is valid.',
+    snippet: result.evidence || '',
+    severity: isUnknown ? 'warning' : 'critical',
+    targetType: parameter.promptGuidance ? 'agent_profile' : 'observability_parameter',
+    targetId: parameter.id || result.parameterId,
+    status: 'open'
+  };
+}
+
+function normalizeParameterStatus(status) {
+  return ['passed', 'failed', 'not_applicable', 'unknown'].includes(status) ? status : 'unknown';
+}
+
+function normalizeConfidence(confidence) {
+  return ['high', 'medium', 'low'].includes(confidence) ? confidence : 'medium';
+}
+
+function normalizeSeverity(severity) {
+  return ['critical', 'warning', 'info'].includes(severity) ? severity : 'warning';
+}
+
+function normalizeTargetType(targetType, parameter = {}) {
+  if (['agent_profile', 'observability_parameter', 'human_follow_up'].includes(targetType)) return targetType;
+  if (parameter.requiresHumanReview) return 'human_follow_up';
+  return parameter.promptGuidance ? 'agent_profile' : 'observability_parameter';
+}
+
+function normalizeActionType(type, parameter = {}) {
+  const value = String(type || '').toLowerCase();
+  if (['human_review', 'script_training', 'follow_up', 'prompt_update', 'parameter_update'].includes(value)) return value;
+
+  const configured = String(parameter.useActionType || '').toLowerCase().replace(/\s+/g, '_');
+  if (['human_review', 'script_training', 'follow_up', 'prompt_update', 'parameter_update'].includes(configured)) {
+    return configured;
+  }
+
+  if (parameter.requiresHumanReview) return 'human_review';
+  return parameter.promptGuidance ? 'prompt_update' : 'parameter_update';
+}
+
+function normalizeActionCategory(category, type, targetType) {
+  if (['customer', 'system'].includes(category)) return category;
+  return actionCategoryFromSignals(type, targetType);
+}
+
+function actionCategoryFromSignals(type, targetType) {
+  if (targetType === 'human_follow_up' || type === 'follow_up') return 'customer';
+  return 'system';
 }
 
 function extractOutputText(body) {

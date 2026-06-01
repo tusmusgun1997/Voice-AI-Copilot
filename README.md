@@ -27,7 +27,6 @@ A HighLevel Voice AI observability suite that monitors call transcripts, scores 
 ```text
 voice-ai-dashboard.readonly
 voice-ai-agents.readonly
-voice-ai-agent-goals.readonly
 locations.readonly
 contacts.readonly
 ```
@@ -49,7 +48,6 @@ GHL_CLIENT_ID=
 GHL_CLIENT_SECRET=
 GHL_OAUTH_REDIRECT_URL=https://your-public-url.example.com/api/oauth/callback
 GHL_OAUTH_USER_TYPE=Location
-AGENT_GOALS_FILE=config/agent-goals.json
 DATA_STORE=json
 LOCAL_DATA_FILE=data/app-data.json
 SUPABASE_URL=
@@ -70,19 +68,6 @@ Set `GHL_CALL_TYPE=TRIAL` when you want the dashboard to focus on sandbox Web Ca
 Set `SHOW_DELETED_AGENT_CALLS=false` to hide historical HighLevel call logs whose agent no longer exists in the live Voice AI agent list.
 
 For Supabase storage, run the SQL in `database/supabase-demo-schema.sql`, set `DATA_STORE=supabase`, and fill `SUPABASE_URL` plus `SUPABASE_SERVICE_ROLE_KEY`. Keep the service-role key backend-only. If you want to apply the schema from the repo, set `SUPABASE_DB_URL` temporarily and run `npm run db:schema`.
-
-## Agent Goal Configuration
-
-The copilot scores each call against an agent goal profile. If no custom profile is configured, the default profile checks for a clear opening, need qualification, next step, outcome confirmation, and escalation handling.
-
-To configure a real HighLevel Voice AI agent:
-
-1. Copy `config/agent-goals.example.json` to `config/agent-goals.json`.
-2. Replace `replace_with_highlevel_agent_id` with the agent ID returned in the Voice AI call logs.
-3. Adjust the `goals`, `criteria`, `keywordsAny`, `requiredWhenAny`, and recommendations to match the agent script.
-4. Restart the backend.
-
-The dashboard will show the active goal profile in the **Goal Checks** panel and on each agent row.
 
 Install and run:
 
@@ -125,7 +110,6 @@ GET /api/call-analyses
 GET /api/call-analyses/:callId
 POST /api/call-analyses/:callId/analyze
 GET /api/analysis-jobs
-GET /api/agent-goals
 GET /api/observability
 POST /api/webhooks/voice-ai-call-end
 ```

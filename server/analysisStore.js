@@ -38,6 +38,72 @@ export async function upsertCallAnalysis(record, filePath = DEFAULT_RESULTS_FILE
   return writeLock;
 }
 
+export async function updateHumanAction(actionId, patch = {}, filePath = DEFAULT_RESULTS_FILE) {
+  const id = cleanString(actionId);
+  if (!id) return null;
+
+  writeLock = writeLock.then(async () => {
+    const analyses = await readStore(filePath);
+    let updatedAction = null;
+    const nextAnalyses = analyses.map((analysis) => {
+      let didUpdateAnalysis = false;
+      const actions = (analysis.useActions ?? []).map((action) => {
+        if (action.id !== id) return action;
+
+        didUpdateAnalysis = true;
+        updatedAction = {
+          ...action,
+          status: cleanString(patch.status) || action.status || 'open',
+          updatedAt: new Date().toISOString()
+        };
+        return updatedAction;
+      });
+
+      return {
+        ...analysis,
+        useActions: actions,
+        updatedAt: didUpdateAnalysis ? new Date().toISOString() : analysis.updatedAt
+      };
+    });
+
+    if (!updatedAction) return null;
+
+    await writeStore(nextAnalyses, filePath);
+    return updatedAction;
+  });
+
+  return writeLock;
+}
+
+export async function deleteHumanAction(actionId, filePath = DEFAULT_RESULTS_FILE) {
+  const id = cleanString(actionId);
+  if (!id) return false;
+
+  writeLock = writeLock.then(async () => {
+    const analyses = await readStore(filePath);
+    let deleted = false;
+    const nextAnalyses = analyses.map((analysis) => {
+      const currentLength = (analysis.useActions ?? []).length;
+      const actions = (analysis.useActions ?? []).filter((action) => action.id !== id);
+      if (actions.length === currentLength) return analysis;
+
+      deleted = true;
+      return {
+        ...analysis,
+        useActions: actions,
+        updatedAt: new Date().toISOString()
+      };
+    });
+
+    if (!deleted) return false;
+
+    await writeStore(nextAnalyses, filePath);
+    return true;
+  });
+
+  return writeLock;
+}
+
 async function readStore(filePath) {
   try {
     return (await readCollection(filePath, 'analyses')).map(normalizeRecord);
@@ -60,6 +126,7 @@ function normalizeRecord(record = {}) {
     agentId: cleanString(record.agentId),
     agentName: cleanString(record.agentName),
     callId: cleanString(record.callId),
+    parameterVersionId: cleanString(record.parameterVersionId),
     callCreatedAt: cleanString(record.callCreatedAt),
     durationSeconds: Number.isFinite(Number(record.durationSeconds)) ? Number(record.durationSeconds) : null,
     status: cleanString(record.status) || 'queued',

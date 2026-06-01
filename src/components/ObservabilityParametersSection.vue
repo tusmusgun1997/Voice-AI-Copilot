@@ -238,7 +238,7 @@ function openLlmParameters(versionId = attachedVersionId.value || selectedVersio
           </div>
 
           <section v-if="selectedParameter.recommendation" class="parameter-read-note">
-            <span>Recommendation when missed</span>
+            <span>Action suggestion when missed</span>
             <p>{{ selectedParameter.recommendation }}</p>
           </section>
 

@@ -22,8 +22,8 @@ defineEmits(['update:selectedAgent']);
 </script>
 
 <template>
-  <section v-if="activeView !== 'calls'" class="controls-row">
-    <label v-if="activeView !== 'calls'">
+  <section v-if="activeView === 'actions'" class="controls-row">
+    <label>
       Agent
       <select :value="selectedAgent" @change="$emit('update:selectedAgent', $event.target.value)">
         <option value="all">All agents</option>

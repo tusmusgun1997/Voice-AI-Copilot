@@ -1,8 +1,8 @@
 <script setup>
-import { ClipboardCheck, Info, Lightbulb, MoreVertical, SlidersHorizontal } from '@lucide/vue';
-import { ref } from 'vue';
+import { ClipboardCheck, Info, MoreVertical, Search, SlidersHorizontal, X } from '@lucide/vue';
+import { computed, ref } from 'vue';
 
-defineProps({
+const props = defineProps({
   agentDirectory: {
     type: Array,
     required: true
@@ -13,12 +13,27 @@ defineProps({
   }
 });
 
-const emit = defineEmits([
-  'open-agent-page',
-  'show-agent-recommendations'
-]);
+const emit = defineEmits(['open-agent-page']);
 
 const openMenuAgentId = ref('');
+const searchQuery = ref('');
+
+const filteredAgents = computed(() => {
+  const query = searchQuery.value.trim().toLowerCase();
+  if (!query) return props.agentDirectory;
+
+  return props.agentDirectory.filter((agent) =>
+    [
+      agent.displayName,
+      agent.name,
+      agent.businessName,
+      agent.parameterVersionName,
+      agent.id
+    ]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(query))
+  );
+});
 
 function toggleAgentMenu(agentId) {
   openMenuAgentId.value = openMenuAgentId.value === agentId ? '' : agentId;
@@ -29,10 +44,6 @@ function openAgentSection(agentId, section) {
   emit('open-agent-page', { agentId, section });
 }
 
-function openAgentRecommendations(agentId) {
-  openMenuAgentId.value = '';
-  emit('show-agent-recommendations', agentId);
-}
 </script>
 
 <template>
@@ -42,12 +53,31 @@ function openAgentRecommendations(agentId) {
         <p class="eyebrow">Directory</p>
         <h2>Voice AI Agents</h2>
       </div>
-      <span>{{ agentDirectory.length }} agents</span>
+      <span>{{ filteredAgents.length }} of {{ agentDirectory.length }} agents</span>
     </header>
+
+    <div class="agent-search-bar">
+      <Search :size="18" />
+      <input
+        v-model="searchQuery"
+        type="search"
+        placeholder="Search agents by name, business, version, or ID"
+        aria-label="Search agents"
+      />
+      <button
+        v-if="searchQuery"
+        class="agent-search-clear"
+        type="button"
+        aria-label="Clear search"
+        @click="searchQuery = ''"
+      >
+        <X :size="16" />
+      </button>
+    </div>
 
     <div class="agent-directory clean-list">
       <article
-        v-for="agent in agentDirectory"
+        v-for="agent in filteredAgents"
         :key="agent.id"
         class="agent-list-row"
         :class="{ 'requires-setup': agent.needsParameterVersion }"
@@ -56,7 +86,7 @@ function openAgentRecommendations(agentId) {
           <span class="agent-avatar">{{ helpers.agentInitials(agent.displayName) }}</span>
           <span class="agent-title">
             <strong>{{ agent.displayName }}</strong>
-            <small>{{ agent.goalProfileName || agent.businessName || 'Voice AI agent' }}</small>
+            <small>{{ agent.businessName || 'Voice AI agent' }}</small>
             <span v-if="agent.needsParameterVersion" class="agent-setup-pill">Attach LLM parameters</span>
             <span v-else-if="agent.parameterVersionName" class="agent-version-pill">{{ agent.parameterVersionName }}</span>
           </span>
@@ -98,10 +128,6 @@ function openAgentRecommendations(agentId) {
               <SlidersHorizontal :size="16" />
               <span>Observability parameters</span>
             </button>
-            <button type="button" role="menuitem" @click="openAgentRecommendations(agent.id)">
-              <Lightbulb :size="16" />
-              <span>Recommendations</span>
-            </button>
             <button type="button" role="menuitem" @click="openAgentSection(agent.id, 'actions')">
               <ClipboardCheck :size="16" />
               <span>Actions</span>
@@ -127,6 +153,12 @@ function openAgentRecommendations(agentId) {
         <p class="eyebrow">No agents</p>
         <h3>No Voice AI agents found yet</h3>
         <p>Create or sync an agent in the HighLevel sandbox and it will appear here.</p>
+      </section>
+
+      <section v-else-if="filteredAgents.length === 0" class="empty-directory">
+        <p class="eyebrow">No matches</p>
+        <h3>No agents match this search</h3>
+        <p>Try searching by agent name, business name, attached parameter version, or HighLevel agent ID.</p>
       </section>
     </div>
   </section>

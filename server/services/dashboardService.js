@@ -2,6 +2,7 @@ import { listCallAnalyses } from '../analysisStore.js';
 import { demoCallLogs } from '../mockData.js';
 import { buildObservabilityDashboard } from '../observability.js';
 import { loadObservabilityProfiles } from '../observabilityProfiles.js';
+import { cleanupDeletedAgentData } from './agentCleanupService.js';
 import { getAgentId, getCallAgentId } from './highLevelService.js';
 
 export function createDashboardService({
@@ -13,7 +14,6 @@ export function createDashboardService({
 } = {}) {
   async function getDashboard(query = {}) {
     const mode = String(query.mode || 'auto');
-    const goalProfiles = await loadObservabilityProfiles(localDataFile, localDataFile);
     let liveResult = null;
     let agentsResult = null;
     let liveError = null;
@@ -35,8 +35,20 @@ export function createDashboardService({
 
     const liveLogs = liveResult?.callLogs ?? [];
     const shouldUseDemo = mode === 'demo' || (useDemoDataWhenEmpty && liveLogs.length === 0);
-    const hasAuthoritativeAgentDirectory = !shouldUseDemo && agentsResult && !agentsError;
+    const hasLiveAgentDirectory = mode !== 'demo' && agentsResult && !agentsError;
+    const hasAuthoritativeAgentDirectory = !shouldUseDemo && hasLiveAgentDirectory;
     const activeAgentIds = new Set((agentsResult?.agents ?? []).map((agent) => getAgentId(agent)).filter(Boolean));
+
+    if (hasLiveAgentDirectory) {
+      await cleanupDeletedAgentData({
+        activeAgentIds: Array.from(activeAgentIds),
+        localDataFile,
+        locationId,
+        allowEmptyActiveSet: true
+      });
+    }
+
+    const goalProfiles = await loadObservabilityProfiles(localDataFile, localDataFile);
     const filteredLiveLogs =
       hasAuthoritativeAgentDirectory && !showDeletedAgentCalls
         ? liveLogs.filter((call) => activeAgentIds.has(getCallAgentId(call)))
@@ -76,41 +88,22 @@ export function applyStoredAnalyses(dashboard, analyses, locationId) {
   const relevantAnalyses = locationAnalyses.filter((analysis) => callIds.has(analysis.callId));
   const analysesByCallId = new Map(relevantAnalyses.map((analysis) => [analysis.callId, analysis]));
 
-  const llmRecommendations = relevantAnalyses.flatMap((analysis) =>
-    (analysis.recommendations ?? [])
-      .filter((recommendation) => isActionableRecommendation(recommendation, analysis))
-      .map((recommendation) => {
+  const llmUseActions = relevantAnalyses.flatMap((analysis) =>
+    (analysis.useActions ?? [])
+      .filter(isOpenAction)
+      .map((action) => {
         const call = callsById.get(analysis.callId);
 
         return {
-          ...recommendation,
-          id: recommendation.id || `${analysis.callId}-llm-recommendation`,
+          ...action,
+          id: action.id || `${analysis.callId}-llm-action`,
           callId: analysis.callId,
           agentId: analysis.agentId,
           contactName: call?.contactName,
-          score: analysis.score,
-          status: analysis.stage,
-          createdAt: analysis.analyzedAt || analysis.updatedAt,
-          confidence: 'medium',
+          createdAt: action.createdAt || analysis.analyzedAt || analysis.updatedAt,
           source: 'llm'
         };
       })
-  );
-
-  const llmUseActions = relevantAnalyses.flatMap((analysis) =>
-    (analysis.useActions ?? []).map((action) => {
-      const call = callsById.get(analysis.callId);
-
-      return {
-        ...action,
-        id: action.id || `${analysis.callId}-llm-action`,
-        callId: analysis.callId,
-        agentId: analysis.agentId,
-        contactName: call?.contactName,
-        createdAt: analysis.analyzedAt || analysis.updatedAt,
-        source: 'llm'
-      };
-    })
   );
 
   return {
@@ -129,13 +122,11 @@ export function applyStoredAnalyses(dashboard, analyses, locationId) {
         llmStage: analysis.stage,
         llmScore: analysis.score,
         llmSummary: analysis.summary,
-        llmParameterResults: analysis.parameterResults
+        llmParameterResults: analysis.parameterResults,
+        llmUseActions: (analysis.useActions ?? []).filter(isOpenAction)
       };
     }),
-    recommendations: [
-      ...llmRecommendations,
-      ...(dashboard.recommendations ?? []).filter((recommendation) => isActionableRecommendation(recommendation))
-    ],
+    recommendations: [],
     useActions: [...llmUseActions, ...(dashboard.useActions ?? [])],
     llmAnalyses: locationAnalyses
       .map((analysis) => ({
@@ -143,10 +134,13 @@ export function applyStoredAnalyses(dashboard, analyses, locationId) {
         callId: analysis.callId,
         agentId: analysis.agentId,
         agentName: analysis.agentName,
+        parameterVersionId: analysis.parameterVersionId,
         status: analysis.status,
         stage: analysis.stage,
         score: analysis.score,
         summary: analysis.summary,
+        parameterResults: analysis.parameterResults,
+        useActions: (analysis.useActions ?? []).filter(isOpenAction),
         errorMessage: analysis.errorMessage,
         attempts: analysis.attempts,
         maxAttempts: analysis.maxAttempts,
@@ -157,21 +151,8 @@ export function applyStoredAnalyses(dashboard, analyses, locationId) {
   };
 }
 
-function isActionableRecommendation(recommendation, analysis = null) {
-  const severity = String(recommendation?.severity || '').toLowerCase();
-  if (!['critical', 'warning'].includes(severity)) return false;
-
-  const parameterStatus = (analysis?.parameterResults ?? []).find(
-    (result) => result.parameterId && result.parameterId === recommendation?.parameterId
-  )?.status;
-  if (String(parameterStatus || '').toLowerCase() === 'passed') return false;
-
-  const hasProblemResult = (analysis?.parameterResults ?? []).some((result) =>
-    ['failed', 'unknown'].includes(String(result.status || '').toLowerCase())
-  );
-  if (analysis?.stage === 'healthy' && !hasProblemResult) return false;
-
-  return true;
+function isOpenAction(action) {
+  return !action?.status || ['open', 'in_review'].includes(action.status);
 }
 
 function toClientError(error) {

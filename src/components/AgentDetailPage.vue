@@ -1,8 +1,7 @@
 <script setup>
-import { ArrowLeft, BarChart3, ClipboardCheck, Lightbulb, SlidersHorizontal } from '@lucide/vue';
+import { ArrowLeft, BarChart3, ClipboardCheck, SlidersHorizontal } from '@lucide/vue';
 import AgentActionsSection from './AgentActionsSection.vue';
 import AgentDetailsSection from './AgentDetailsSection.vue';
-import AgentReviewSection from './AgentReviewSection.vue';
 import ObservabilityParametersSection from './ObservabilityParametersSection.vue';
 
 defineProps({
@@ -90,13 +89,14 @@ defineEmits([
   'show-agent-calls',
   'show-call',
   'start-edit-agent',
-  'start-edit-observability-profile'
+  'start-edit-observability-profile',
+  'update-action-status',
+  'delete-action'
 ]);
 
 const detailTabs = [
   { id: 'details', label: 'Info', icon: BarChart3 },
   { id: 'observability-parameters', label: 'Observability parameters', icon: SlidersHorizontal },
-  { id: 'recommendations', label: 'Recommendations', icon: Lightbulb },
   { id: 'actions', label: 'Actions', icon: ClipboardCheck }
 ];
 </script>
@@ -111,7 +111,7 @@ const detailTabs = [
     <header class="agent-detail-hero">
       <span class="agent-avatar large">{{ helpers.agentInitials(selectedAgentPanel.displayName) }}</span>
       <div class="agent-detail-title">
-        <p class="eyebrow">{{ selectedAgentPanel.goalProfileName || 'Voice AI agent' }}</p>
+        <p class="eyebrow">Voice AI agent</p>
         <h2>{{ selectedAgentPanel.displayName }}</h2>
         <small>{{ selectedAgentPanel.businessName || 'HighLevel voice agent' }}</small>
       </div>
@@ -148,14 +148,6 @@ const detailTabs = [
         @start-edit-agent="$emit('start-edit-agent', $event)"
       />
 
-      <AgentReviewSection
-        v-else-if="activeAgentSection === 'recommendations'"
-        :helpers="helpers"
-        :selected-agent-panel="selectedAgentPanel"
-        @open-agent-section="$emit('open-agent-section', $event)"
-        @show-call="$emit('show-call', $event)"
-      />
-
       <ObservabilityParametersSection
         v-else-if="activeAgentSection === 'observability-parameters'"
         :loading-profile-agent-id="loadingProfileAgentId"
@@ -173,7 +165,9 @@ const detailTabs = [
         v-else
         :helpers="helpers"
         :selected-agent-panel="selectedAgentPanel"
+        @delete-action="$emit('delete-action', $event)"
         @show-call="$emit('show-call', $event)"
+        @update-action-status="$emit('update-action-status', $event)"
       />
     </section>
   </section>

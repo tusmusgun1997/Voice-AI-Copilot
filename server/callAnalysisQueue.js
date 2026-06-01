@@ -151,12 +151,13 @@ export function createCallAnalysisQueue(config = {}) {
           callId: call.id || job.callId,
           callCreatedAt: call.createdAt,
           durationSeconds: call.durationSeconds,
+          parameterVersionId: profile?.parameterVersionId || '',
           status: analysis.status,
           stage: analysis.stage,
           score: analysis.score,
           summary: analysis.summary,
           parameterResults: analysis.parameterResults,
-          recommendations: decorateRecommendations(analysis.recommendations, call),
+          recommendations: [],
           useActions: decorateUseActions(analysis.useActions, call),
           model: config.openAiModel,
           queuedReason: job.queuedReason,
@@ -368,38 +369,28 @@ function normalizeTranscript(transcript) {
   return '';
 }
 
-function decorateRecommendations(recommendations, call) {
-  return recommendations
-    .filter((recommendation) => ['critical', 'warning'].includes(String(recommendation?.severity || '').toLowerCase()))
-    .map((recommendation, index) => ({
-      id: `${call.id}-llm-rec-${index + 1}`,
-      callId: call.id,
-      agentId: call.agentId,
-      title: recommendation.title,
-      detail: recommendation.detail,
-      severity: recommendation.severity,
-      promptPatch: recommendation.promptGuidance,
-      parameterId: recommendation.parameterId,
-      targetType: recommendation.targetType || 'observability_parameter',
-      targetAction: recommendation.targetAction || 'update',
-      targetId: recommendation.targetId || recommendation.parameterId || '',
-      suggestedChange: recommendation.suggestedChange || recommendation.promptGuidance || recommendation.detail || '',
-      reviewStatus: recommendation.reviewStatus || 'needs_human_review'
-    }));
-}
-
 function decorateUseActions(useActions, call) {
   return useActions.map((action, index) => ({
     id: `${call.id}-llm-action-${index + 1}`,
     callId: call.id,
     agentId: call.agentId,
+    title: action.title || action.reason || 'Human review needed',
     type: action.type,
+    category: action.category || actionCategoryFromSignals(action.type, action.targetType),
     reason: action.reason,
+    suggestion: action.suggestion || '',
     snippet: action.snippet,
     severity: action.severity,
     parameterId: action.parameterId,
-    status: 'open'
+    targetType: action.targetType || 'human_follow_up',
+    targetId: action.targetId || action.parameterId || '',
+    status: action.status || 'open'
   }));
+}
+
+function actionCategoryFromSignals(type, targetType) {
+  if (targetType === 'human_follow_up' || type === 'follow_up') return 'customer';
+  return 'system';
 }
 
 function extractWebhookIds(payload = {}) {

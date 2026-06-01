@@ -155,12 +155,119 @@ function createSupabaseRestClient() {
         prefer: 'resolution=merge-duplicates,return=representation'
       });
     },
+    update(table, params, patch) {
+      return request(table, {
+        method: 'PATCH',
+        params,
+        body: patch,
+        prefer: 'return=representation'
+      });
+    },
     delete(table, params) {
       return request(table, {
         method: 'DELETE',
         params
       });
     }
+  };
+}
+
+export async function updateSupabaseHumanAction(actionId, patch = {}) {
+  if (!isSupabaseStoreEnabled() || !actionId) return null;
+
+  const client = createSupabaseRestClient();
+  const rows = await client.update(
+    'human_actions',
+    {
+      id: `eq.${actionId}`
+    },
+    {
+      status: cleanString(patch.status) || 'open',
+      updated_at: new Date().toISOString()
+    }
+  );
+
+  return rows[0] ? rowToAction(rows[0]) : null;
+}
+
+export async function deleteSupabaseHumanAction(actionId) {
+  if (!isSupabaseStoreEnabled() || !actionId) return false;
+
+  const client = createSupabaseRestClient();
+  await client.delete('human_actions', {
+    id: `eq.${actionId}`
+  });
+
+  return true;
+}
+
+export async function cleanupSupabaseDeletedAgents({ activeAgentIds = [], locationId, allowEmptyActiveSet = false } = {}) {
+  if (!isSupabaseStoreEnabled()) return { deletedAgentIds: [], deletedCount: 0 };
+
+  const client = createSupabaseRestClient();
+  const installation = await getInstallation(client);
+  const activeSet = new Set((activeAgentIds ?? []).map(cleanString).filter(Boolean));
+  if (activeSet.size === 0 && !allowEmptyActiveSet) return { deletedAgentIds: [], deletedCount: 0 };
+
+  const [profiles, analyses, jobs, events] = await Promise.all([
+    client.select('agent_observability_profiles', {
+      installation_id: `eq.${installation.id}`,
+      select: 'ghl_agent_id'
+    }),
+    client.select('call_analyses', {
+      installation_id: `eq.${installation.id}`,
+      select: 'ghl_agent_id'
+    }),
+    client.select('call_analysis_jobs', {
+      installation_id: `eq.${installation.id}`,
+      select: 'ghl_agent_id'
+    }),
+    client.select('webhook_events', {
+      installation_id: `eq.${installation.id}`,
+      select: 'ghl_agent_id'
+    })
+  ]);
+
+  const knownAgentIds = Array.from(
+    new Set(
+      [...profiles, ...analyses, ...jobs, ...events]
+        .map((row) => cleanString(row.ghl_agent_id))
+        .filter(Boolean)
+    )
+  );
+  const deletedAgentIds = knownAgentIds.filter((agentId) => !activeSet.has(agentId));
+
+  for (const agentId of deletedAgentIds) {
+    await cleanupSupabaseAgentData({ agentId, locationId, client, installationId: installation.id });
+  }
+
+  return {
+    deletedAgentIds,
+    deletedCount: deletedAgentIds.length
+  };
+}
+
+export async function cleanupSupabaseAgentData({ agentId, locationId, client: existingClient, installationId } = {}) {
+  const cleanAgentId = cleanString(agentId);
+  if (!isSupabaseStoreEnabled() || !cleanAgentId) return { deletedAgentIds: [], deletedCount: 0 };
+
+  const client = existingClient || createSupabaseRestClient();
+  const installation = installationId ? { id: installationId } : await getInstallation(client);
+  const params = {
+    installation_id: `eq.${installation.id}`,
+    ghl_agent_id: `eq.${cleanAgentId}`
+  };
+
+  await Promise.all([
+    client.delete('agent_observability_profiles', params),
+    client.delete('call_analyses', params),
+    client.delete('call_analysis_jobs', params),
+    client.delete('webhook_events', params)
+  ]);
+
+  return {
+    deletedAgentIds: [cleanAgentId],
+    deletedCount: 1
   };
 }
 
@@ -439,6 +546,7 @@ function rowToAnalysis(row, parameterResults, recommendations, useActions) {
     agentId: row.ghl_agent_id || '',
     agentName: row.agent_name_snapshot || '',
     callId: row.ghl_call_id || '',
+    parameterVersionId: row.parameter_version_id || '',
     callCreatedAt: row.call_created_at || '',
     durationSeconds: row.duration_seconds,
     status: row.status || 'queued',
@@ -530,11 +638,18 @@ function rowToAction(row) {
     callId: row.ghl_call_id,
     agentId: row.ghl_agent_id,
     parameterId: row.parameter_key || '',
+    title: row.title || '',
     type: row.action_type || '',
+    category: row.action_category || actionCategoryFromSignals(row.action_type, row.target_type),
     reason: row.reason || '',
+    suggestion: row.suggestion || '',
     snippet: row.transcript_snippet || '',
     severity: row.severity || 'info',
-    status: row.status || 'open'
+    targetType: row.target_type || '',
+    targetId: row.target_id || '',
+    status: row.status || 'open',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
   };
 }
 
@@ -568,16 +683,26 @@ function actionToRow(action, installationId, analysis) {
     ghl_agent_id: action.agentId || analysis.agentId || '',
     ghl_call_id: action.callId || analysis.callId || '',
     parameter_key: action.parameterId || '',
+    title: action.title || action.reason || 'Human review needed',
     action_type: action.type || 'human_review',
+    action_category: action.category || actionCategoryFromSignals(action.type, action.targetType),
     reason: action.reason || '',
+    suggestion: action.suggestion || '',
     transcript_snippet: action.snippet || '',
     severity: action.severity || 'info',
+    target_type: action.targetType || 'human_follow_up',
+    target_id: action.targetId || action.parameterId || '',
     status: action.status || 'open'
   };
 }
 
 function cleanUrl(value) {
   return cleanString(value).replace(/\/+$/, '');
+}
+
+function actionCategoryFromSignals(type, targetType) {
+  if (targetType === 'human_follow_up' || type === 'follow_up') return 'customer';
+  return 'system';
 }
 
 function cleanString(value) {

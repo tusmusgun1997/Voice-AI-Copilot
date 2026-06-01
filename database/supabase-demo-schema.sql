@@ -161,16 +161,41 @@ create table if not exists human_actions (
   ghl_agent_id text not null,
   ghl_call_id text not null,
   parameter_key text default '',
+  title text default '',
   action_type text not null,
+  action_category text default 'system'
+    check (action_category in ('customer', 'system')),
   reason text default '',
+  suggestion text default '',
   transcript_snippet text default '',
   severity text default 'info'
     check (severity in ('critical', 'warning', 'info')),
+  target_type text default 'human_follow_up'
+    check (target_type in ('agent_profile', 'observability_parameter', 'human_follow_up')),
+  target_id text default '',
   status text default 'open'
     check (status in ('open', 'in_review', 'done', 'dismissed')),
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
+
+alter table human_actions add column if not exists title text default '';
+alter table human_actions add column if not exists action_category text default 'system';
+alter table human_actions add column if not exists suggestion text default '';
+alter table human_actions add column if not exists target_type text default 'human_follow_up';
+alter table human_actions add column if not exists target_id text default '';
+
+update human_actions
+set
+  title = coalesce(nullif(title, ''), nullif(reason, ''), action_type),
+  suggestion = coalesce(nullif(suggestion, ''), ''),
+  action_category = case
+    when target_type = 'human_follow_up' or action_type = 'follow_up' then 'customer'
+    else 'system'
+  end
+where title = '' or suggestion = '' or action_category is null or action_category = '';
+
+delete from call_recommendations;
 
 create index if not exists idx_installations_location on app_installations (ghl_location_id);
 create index if not exists idx_agent_profiles_agent on agent_observability_profiles (installation_id, ghl_agent_id);
@@ -181,3 +206,4 @@ create index if not exists idx_analyses_call on call_analyses (installation_id, 
 create index if not exists idx_parameter_results_analysis on call_parameter_results (analysis_id);
 create index if not exists idx_recommendations_agent on call_recommendations (installation_id, ghl_agent_id, review_status);
 create index if not exists idx_actions_status on human_actions (installation_id, status, severity);
+create index if not exists idx_actions_category on human_actions (installation_id, action_category, status);

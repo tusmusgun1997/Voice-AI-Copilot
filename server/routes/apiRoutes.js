@@ -10,8 +10,9 @@ export function createApiRouter(controllers) {
   router.get('/call-analyses/:callId', asyncHandler(controllers.calls.getAnalysis));
   router.post('/call-analyses/:callId/analyze', asyncHandler(controllers.calls.analyzeCall));
   router.get('/analysis-jobs', asyncHandler(controllers.calls.listAnalysisJobs));
+  router.patch('/human-actions/:actionId', asyncHandler(controllers.calls.updateAction));
+  router.delete('/human-actions/:actionId', asyncHandler(controllers.calls.deleteAction));
 
-  router.get('/agent-goals', asyncHandler(controllers.observabilityProfiles.listAgentGoals));
   router.get('/agent-observability-profiles', asyncHandler(controllers.observabilityProfiles.listProfiles));
   router.get('/agent-observability-profiles/:agentId', asyncHandler(controllers.observabilityProfiles.getProfile));
   router.put('/agent-observability-profiles/:agentId', asyncHandler(controllers.observabilityProfiles.saveProfile));
@@ -25,7 +26,9 @@ export function createApiRouter(controllers) {
 
   router.get('/oauth/callback', asyncHandler(controllers.oauth.callback));
   router.get('/observability', asyncHandler(controllers.observability.getDashboard));
+  router.post('/webhooks/highlevel', asyncHandler(controllers.webhooks.highLevelEvent));
   router.post('/webhooks/voice-ai-call-end', asyncHandler(controllers.webhooks.voiceAiCallEnd));
+  router.post('/webhooks/voice-ai-agent-delete', asyncHandler(controllers.webhooks.voiceAiAgentDelete));
 
   return router;
 }

@@ -1,4 +1,9 @@
-import { getCallAnalysis, listCallAnalyses } from '../analysisStore.js';
+import { deleteHumanAction, getCallAnalysis, listCallAnalyses, updateHumanAction } from '../analysisStore.js';
+import {
+  deleteSupabaseHumanAction,
+  isSupabaseStoreEnabled,
+  updateSupabaseHumanAction
+} from '../services/supabaseStore.js';
 import { cleanString } from '../utils/http.js';
 
 export function createCallController({ analysisQueue, highLevelService, localDataFile, defaultLocationId }) {
@@ -76,11 +81,73 @@ export function createCallController({ analysisQueue, highLevelService, localDat
     });
   }
 
+  async function updateAction(request, response) {
+    const actionId = cleanString(request.params.actionId);
+    const status = cleanString(request.body?.status);
+    const allowedStatuses = new Set(['open', 'in_review', 'done', 'dismissed']);
+
+    if (!actionId || !allowedStatuses.has(status)) {
+      response.status(400).json({
+        message: 'A valid actionId and status are required.',
+        status: 400
+      });
+      return;
+    }
+
+    const action = isSupabaseStoreEnabled()
+      ? await updateSupabaseHumanAction(actionId, { status })
+      : await updateHumanAction(actionId, { status }, localDataFile);
+
+    if (!action) {
+      response.status(404).json({
+        message: 'Human action was not found.',
+        status: 404
+      });
+      return;
+    }
+
+    response.json({
+      updated: true,
+      action
+    });
+  }
+
+  async function deleteAction(request, response) {
+    const actionId = cleanString(request.params.actionId);
+
+    if (!actionId) {
+      response.status(400).json({
+        message: 'Missing actionId.',
+        status: 400
+      });
+      return;
+    }
+
+    const deleted = isSupabaseStoreEnabled()
+      ? await deleteSupabaseHumanAction(actionId)
+      : await deleteHumanAction(actionId, localDataFile);
+
+    if (!deleted) {
+      response.status(404).json({
+        message: 'Human action was not found.',
+        status: 404
+      });
+      return;
+    }
+
+    response.json({
+      deleted: true,
+      actionId
+    });
+  }
+
   return {
     listCallLogs,
     listAnalyses,
     getAnalysis,
     analyzeCall,
-    listAnalysisJobs
+    listAnalysisJobs,
+    updateAction,
+    deleteAction
   };
 }

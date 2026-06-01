@@ -1,4 +1,6 @@
-export function createWebhookController({ analysisQueue }) {
+import { cleanupAgentData } from '../services/agentCleanupService.js';
+
+export function createWebhookController({ analysisQueue, localDataFile, locationId }) {
   async function voiceAiCallEnd(request, response) {
     try {
       const job = await analysisQueue.enqueueWebhookAnalysis(request.body, request.body?.type ?? 'VoiceAiCallEnd');
@@ -25,7 +27,69 @@ export function createWebhookController({ analysisQueue }) {
     }
   }
 
+  async function voiceAiAgentDelete(request, response) {
+    const agentId = extractAgentId(request.body);
+    if (!agentId) {
+      response.status(400).json({
+        message: 'Webhook payload did not include an agentId.',
+        status: 400
+      });
+      return;
+    }
+
+    const result = await cleanupAgentData(agentId, { localDataFile, locationId });
+
+    response.status(202).json({
+      accepted: true,
+      event: request.body?.type ?? 'VoiceAiAgentDelete',
+      agentId,
+      ...result,
+      receivedAt: new Date().toISOString()
+    });
+  }
+
+  async function highLevelEvent(request, response) {
+    const eventType = String(request.body?.type || request.body?.event || request.body?.eventType || '');
+
+    if (isAgentDeleteEvent(eventType)) {
+      await voiceAiAgentDelete(request, response);
+      return;
+    }
+
+    if (isVoiceAiCallEndEvent(eventType)) {
+      await voiceAiCallEnd(request, response);
+      return;
+    }
+
+    response.status(202).json({
+      accepted: true,
+      ignored: true,
+      event: eventType || 'Unknown',
+      receivedAt: new Date().toISOString()
+    });
+  }
+
   return {
-    voiceAiCallEnd
+    voiceAiCallEnd,
+    voiceAiAgentDelete,
+    highLevelEvent
   };
+}
+
+function extractAgentId(payload = {}) {
+  const data = payload.data ?? payload.agent ?? payload;
+  return cleanString(payload.agentId ?? payload.agent?.id ?? data.agentId ?? data.id ?? data._id);
+}
+
+function isAgentDeleteEvent(eventType) {
+  return /voice\s*ai\s*agent\s*delete|voiceaiagentdelete|voice_ai_agent_delete|agentdeleted|agentdelete/i.test(eventType);
+}
+
+function isVoiceAiCallEndEvent(eventType) {
+  return /voice\s*ai\s*call\s*end|voiceaicallend|voice_ai_call_end/i.test(eventType);
+}
+
+function cleanString(value) {
+  if (value === null || value === undefined) return '';
+  return String(value).trim();
 }

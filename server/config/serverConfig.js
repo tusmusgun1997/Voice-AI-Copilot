@@ -4,7 +4,6 @@ export function createServerConfig(env = process.env) {
   return {
     port: Number(env.PORT || 3001),
     localDataFile,
-    agentGoalsFile: env.AGENT_GOALS_FILE,
     highLevel: {
       token: env.GHL_PRIVATE_INTEGRATION_TOKEN,
       locationId: env.GHL_LOCATION_ID,

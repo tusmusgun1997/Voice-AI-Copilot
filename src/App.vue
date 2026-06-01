@@ -13,6 +13,7 @@ import ActionsPage from './components/ActionsPage.vue';
 import AgentDetailPage from './components/AgentDetailPage.vue';
 import AgentsPage from './components/AgentsPage.vue';
 import AppSidebar from './components/AppSidebar.vue';
+import CallDetailPage from './components/CallDetailPage.vue';
 import CallsPage from './components/CallsPage.vue';
 import DashboardControls from './components/DashboardControls.vue';
 import DashboardTopbar from './components/DashboardTopbar.vue';
@@ -28,6 +29,7 @@ const sidebarCollapsed = ref(false);
 const expandedAgentId = ref('');
 const agentRouteId = ref('');
 const expandedCallId = ref('');
+const callRouteId = ref('');
 const editingAgentId = ref('');
 const agentDrafts = ref({});
 const savingAgentId = ref('');
@@ -75,7 +77,7 @@ const navItems = computed(() => [
   },
   {
     id: 'llm-parameters',
-    label: 'LLM Parameters',
+    label: 'Observability',
     icon: SlidersHorizontal,
     count: parameterVersions.value.length
   }
@@ -94,17 +96,14 @@ const filteredIssues = computed(() => {
   return (dashboard.value?.issues ?? []).filter((issue) => calls.has(issue.callId));
 });
 
-const filteredRecommendations = computed(() => {
-  const calls = new Set(filteredCalls.value.map((call) => call.id));
-  return (dashboard.value?.recommendations ?? []).filter((recommendation) => calls.has(recommendation.callId));
-});
-
 const filteredUseActions = computed(() => {
   const calls = new Set(filteredCalls.value.map((call) => call.id));
   return (dashboard.value?.useActions ?? []).filter((action) => calls.has(action.callId));
 });
 
-const filteredHumanActions = computed(() => filteredUseActions.value.filter((action) => action.source === 'llm'));
+const filteredHumanActions = computed(() =>
+  filteredUseActions.value.filter((action) => action.source === 'llm' && (!action.status || ['open', 'in_review'].includes(action.status)))
+);
 
 const criticalIssueCount = computed(() => filteredIssues.value.filter((issue) => issue.severity === 'critical').length);
 
@@ -113,8 +112,6 @@ const selectedAgentName = computed(() => {
   const agent = dashboard.value?.agents?.find((item) => item.id === selectedAgent.value);
   return agent ? displayAgentName(agent.id, agent.name) : 'Selected agent';
 });
-
-const topRecommendation = computed(() => filteredRecommendations.value.find((item) => item.severity === 'critical') ?? filteredRecommendations.value[0]);
 
 const sourceLabel = computed(() => {
   const source = dashboard.value?.dataSource;
@@ -128,6 +125,10 @@ const sourceLabel = computed(() => {
 });
 
 const activeViewTitle = computed(() => {
+  if (callRouteId.value) {
+    return selectedCallPanel.value?.contactName ?? 'Call';
+  }
+
   if (agentRouteId.value) {
     return selectedAgentPanel.value?.displayName ?? 'Agent';
   }
@@ -151,14 +152,12 @@ const agentDirectory = computed(() => {
   const agents = dashboard.value?.agents ?? [];
   const calls = dashboard.value?.calls ?? [];
   const issues = dashboard.value?.issues ?? [];
-  const recommendations = dashboard.value?.recommendations ?? [];
   const useActions = dashboard.value?.useActions ?? [];
 
   return agents.map((agent, index) => {
     const agentCalls = calls.filter((call) => call.agentId === agent.id);
     const agentIssues = issues.filter((issue) => issue.agentId === agent.id);
-    const agentRecommendations = recommendations.filter((recommendation) => recommendation.agentId === agent.id);
-    const agentUseActions = useActions.filter((action) => action.agentId === agent.id);
+    const agentUseActions = useActions.filter((action) => action.agentId === agent.id && action.source === 'llm');
     const recentCalls = agentCalls.slice(0, 3);
     const savedProfile = savedObservabilityProfileByAgent.value[agent.id] ?? observabilityProfileByAgent.value[agent.id] ?? null;
     const parameterVersionId = savedProfile?.parameterVersionId || '';
@@ -171,7 +170,6 @@ const agentDirectory = computed(() => {
       displayName: getReadableAgentName(agent, index),
       calls: agentCalls,
       issues: agentIssues,
-      recommendations: agentRecommendations,
       useActions: agentUseActions,
       recentCalls,
       weakestCall,
@@ -208,21 +206,39 @@ const overviewHealthLabel = computed(() => {
 
 const callDetailsById = computed(() => {
   const issues = dashboard.value?.issues ?? [];
-  const recommendations = dashboard.value?.recommendations ?? [];
   const useActions = dashboard.value?.useActions ?? [];
   const details = new Map();
 
   for (const call of dashboard.value?.calls ?? []) {
     details.set(call.id, {
       issues: issues.filter((issue) => issue.callId === call.id),
-      recommendations: recommendations.filter((recommendation) => recommendation.callId === call.id),
-      useActions: useActions.filter((action) => action.callId === call.id),
+      useActions: useActions.filter((action) => action.callId === call.id && action.source === 'llm'),
       transcriptTurns: parseTranscript(call.transcript)
     });
   }
 
   return details;
 });
+
+const callAnalysisById = computed(() => {
+  const map = new Map();
+
+  for (const analysis of dashboard.value?.llmAnalyses ?? []) {
+    if (!analysis.callId) continue;
+    const current = map.get(analysis.callId);
+    if (!current || new Date(analysis.updatedAt || 0) > new Date(current.updatedAt || 0)) {
+      map.set(analysis.callId, analysis);
+    }
+  }
+
+  return map;
+});
+
+const selectedCallPanel = computed(() => (dashboard.value?.calls ?? []).find((call) => call.id === callRouteId.value) ?? null);
+const selectedCallDetails = computed(() =>
+  selectedCallPanel.value ? callDetails(selectedCallPanel.value.id) : { issues: [], useActions: [], transcriptTurns: [] }
+);
+const selectedCallAnalysis = computed(() => (selectedCallPanel.value ? getCallAnalysis(selectedCallPanel.value) : null));
 
 onMounted(() => {
   syncRouteFromLocation();
@@ -316,14 +332,24 @@ async function loadParameterVersions() {
 }
 
 function syncRouteFromLocation() {
+  const routedCallId = getCallIdFromPath();
+  if (routedCallId) {
+    callRouteId.value = routedCallId;
+    activeView.value = 'calls';
+    agentRouteId.value = '';
+    resetAgentPanelState();
+    return;
+  }
+
   const routedAgentId = getAgentIdFromPath();
 
   if (routedAgentId) {
     agentRouteId.value = routedAgentId;
     expandedAgentId.value = routedAgentId;
     activeView.value = 'agents';
+    callRouteId.value = '';
 
-    if (!['details', 'observability-parameters', 'recommendations', 'actions'].includes(activeAgentSection.value)) {
+    if (!['details', 'observability-parameters', 'actions'].includes(activeAgentSection.value)) {
       activeAgentSection.value = 'details';
     }
 
@@ -336,6 +362,7 @@ function syncRouteFromLocation() {
   }
 
   agentRouteId.value = '';
+  callRouteId.value = '';
   const hashView = window.location.hash.replace('#', '');
   if (navItems.value.some((item) => item.id === hashView)) {
     activeView.value = hashView;
@@ -347,7 +374,7 @@ function getAgentIdFromPath() {
   if (!path || path === 'index.html') return '';
 
   const firstSegment = path.split('/')[0];
-  if (['api', 'assets'].includes(firstSegment)) return '';
+  if (['api', 'assets', 'calls'].includes(firstSegment)) return '';
 
   try {
     return decodeURIComponent(firstSegment);
@@ -356,9 +383,24 @@ function getAgentIdFromPath() {
   }
 }
 
+function getCallIdFromPath() {
+  const path = window.location.pathname.replace(/^\/+|\/+$/g, '');
+  if (!path || path === 'index.html') return '';
+
+  const [firstSegment, secondSegment] = path.split('/');
+  if (firstSegment !== 'calls' || !secondSegment) return '';
+
+  try {
+    return decodeURIComponent(secondSegment);
+  } catch {
+    return secondSegment;
+  }
+}
+
 function setView(view) {
   activeView.value = view;
   agentRouteId.value = '';
+  callRouteId.value = '';
   resetAgentPanelState();
   if (view !== 'llm-parameters') {
     llmParameterFocusVersionId.value = '';
@@ -373,6 +415,7 @@ function openLlmParameters(versionId = '') {
   llmParameterFocusVersionId.value = versionId || '';
   activeView.value = 'llm-parameters';
   agentRouteId.value = '';
+  callRouteId.value = '';
   resetAgentPanelState();
   loadParameterVersions();
   window.history.pushState({}, '', '/#llm-parameters');
@@ -381,6 +424,7 @@ function openLlmParameters(versionId = '') {
 function openAgentDetails(agentId, section = 'details') {
   activeView.value = 'agents';
   agentRouteId.value = agentId;
+  callRouteId.value = '';
   expandedAgentId.value = agentId;
   activeAgentSection.value = section;
   agentEditError.value = '';
@@ -415,6 +459,7 @@ function closeAgentDetails() {
 function backToAgents() {
   activeView.value = 'agents';
   agentRouteId.value = '';
+  callRouteId.value = '';
   resetAgentPanelState();
   window.history.pushState({}, '', '/#agents');
 }
@@ -432,19 +477,26 @@ function showCallDetails(callId) {
   if (!call) return;
 
   selectedAgent.value = call.agentId;
-  expandedCallId.value = callId;
-  closeAgentDetails();
-  setView('calls');
+  expandedCallId.value = '';
+  agentRouteId.value = '';
+  resetAgentPanelState();
+  activeView.value = 'calls';
+  callRouteId.value = callId;
+  window.history.pushState({}, '', `/calls/${encodeURIComponent(callId)}`);
+}
+
+function backToCalls() {
+  activeView.value = 'calls';
+  callRouteId.value = '';
+  expandedCallId.value = '';
+  window.history.pushState({}, '', '/#calls');
 }
 
 function showAgentCalls(agentId) {
   selectedAgent.value = agentId;
+  callRouteId.value = '';
   closeAgentDetails();
   setView('calls');
-}
-
-function showAgentRecommendations(agentId) {
-  openAgentDetails(agentId, 'recommendations');
 }
 
 function showAgentActions(agentId) {
@@ -761,6 +813,52 @@ async function analyzeCall(call) {
   }
 }
 
+async function updateHumanActionStatus(action, status) {
+  if (!action?.id || !status) return;
+
+  error.value = '';
+
+  try {
+    const response = await fetch(`/api/human-actions/${encodeURIComponent(action.id)}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ status })
+    });
+    const body = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(body.message || 'Unable to update action');
+    }
+
+    await loadDashboard({ silent: true });
+  } catch (requestError) {
+    error.value = requestError.message;
+  }
+}
+
+async function deleteHumanAction(action) {
+  if (!action?.id) return;
+
+  error.value = '';
+
+  try {
+    const response = await fetch(`/api/human-actions/${encodeURIComponent(action.id)}`, {
+      method: 'DELETE'
+    });
+    const body = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(body.message || 'Unable to delete action');
+    }
+
+    await loadDashboard({ silent: true });
+  } catch (requestError) {
+    error.value = requestError.message;
+  }
+}
+
 function preserveCurrentScroll() {
   const scrollTargets = [
     document.scrollingElement,
@@ -799,9 +897,22 @@ function preserveCurrentScroll() {
 function callDetails(callId) {
   return callDetailsById.value.get(callId) ?? {
     issues: [],
-    recommendations: [],
     useActions: [],
     transcriptTurns: []
+  };
+}
+
+function getCallAnalysis(call) {
+  if (!call?.id) return null;
+
+  return callAnalysisById.value.get(call.id) ?? {
+    status: call.llmAnalysisStatus,
+    stage: call.llmStage,
+    score: call.llmScore,
+    summary: call.llmSummary,
+    parameterResults: call.llmParameterResults ?? [],
+    useActions: call.llmUseActions ?? [],
+    errorMessage: call.llmAnalysisError || ''
   };
 }
 
@@ -966,10 +1077,6 @@ function getReadableAgentName(agent, index) {
 
   if (rawName && !looksGeneratedAgentName(rawName, id)) return rawName;
 
-  if (agent?.goalProfileName && !agent.goalProfileName.toLowerCase().startsWith('default')) {
-    return agent.goalProfileName;
-  }
-
   return `Voice AI Agent ${index + 1}`;
 }
 
@@ -1133,7 +1240,31 @@ const helpers = {
       </section>
 
       <template v-else-if="dashboard">
-        <template v-if="agentRouteId">
+        <template v-if="callRouteId">
+          <CallDetailPage
+            v-if="selectedCallPanel"
+            :analyzing="Boolean(analyzingCallIds[selectedCallPanel.id])"
+            :call="selectedCallPanel"
+            :call-analysis="selectedCallAnalysis"
+            :call-details="selectedCallDetails"
+            :helpers="helpers"
+            @analyze-call="analyzeCall"
+            @back-to-calls="backToCalls"
+            @delete-action="deleteHumanAction"
+            @update-action-status="updateHumanActionStatus($event.action, $event.status)"
+          />
+
+          <section v-else class="agent-detail-missing">
+            <p class="eyebrow">Call not found</p>
+            <h2>This call is not available anymore</h2>
+            <p>It may have been removed from the current HighLevel call logs or the dashboard has not synced it yet.</p>
+            <button class="text-button primary" type="button" @click="backToCalls">
+              Back to calls
+            </button>
+          </section>
+        </template>
+
+        <template v-else-if="agentRouteId">
           <AgentDetailPage
             v-if="selectedAgentPanel"
             :active-agent-section="activeAgentSection"
@@ -1158,6 +1289,7 @@ const helpers = {
             @back-to-agents="backToAgents"
             @cancel-edit-agent="cancelEditAgent"
             @cancel-edit-observability-profile="cancelEditObservabilityProfile"
+            @delete-action="deleteHumanAction"
             @open-agent-section="openAgentDetails($event.agentId, $event.section)"
             @open-llm-parameters="openLlmParameters"
             @remove-observability-criterion="removeObservabilityCriterion"
@@ -1167,6 +1299,7 @@ const helpers = {
             @show-call="showCallDetails"
             @start-edit-agent="startEditAgent"
             @start-edit-observability-profile="startEditObservabilityProfile"
+            @update-action-status="updateHumanActionStatus($event.action, $event.status)"
           />
 
           <section v-else class="agent-detail-missing">
@@ -1200,7 +1333,6 @@ const helpers = {
           :overview-issues="overviewIssues"
           :overview-kpis="overviewKpis"
           :selected-agent-name="selectedAgentName"
-          :top-recommendation="topRecommendation"
           @set-view="setView"
           @show-agent="showAgentDetails"
           @show-call="showCallDetails"
@@ -1211,24 +1343,19 @@ const helpers = {
           :agent-directory="agentDirectory"
           :helpers="helpers"
           @open-agent-page="openAgentDetails($event.agentId, $event.section)"
-          @show-agent-recommendations="showAgentRecommendations"
         />
 
         <CallsPage
           v-else-if="activeView === 'calls'"
           :agent-directory="agentDirectory"
-          :analyzing-call-ids="analyzingCallIds"
           :call-details="callDetails"
-          :expanded-call-id="expandedCallId"
           :filtered-calls="filteredCalls"
           :helpers="helpers"
           :llm-analyses="dashboard.llmAnalyses ?? []"
           :selected-agent="selectedAgent"
           :total-call-count="dashboard.summary.totalCalls"
-          @analyze-call="analyzeCall"
+          @open-call="showCallDetails"
           @select-agent="selectedAgent = $event"
-          @show-agent-recommendations="showAgentRecommendations"
-          @toggle-call="toggleCall"
         />
 
         <ActionsPage
@@ -1236,8 +1363,10 @@ const helpers = {
           :actions="filteredHumanActions"
           :helpers="helpers"
           :selected-agent-name="selectedAgentName"
+          @delete-action="deleteHumanAction"
           @show-agent-review="showAgentActions"
           @show-call="showCallDetails"
+          @update-action-status="updateHumanActionStatus($event.action, $event.status)"
         />
 
         <LlmParametersPage

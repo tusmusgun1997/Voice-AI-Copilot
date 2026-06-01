@@ -589,7 +589,7 @@ function splitList(value) {
             </div>
             <p>{{ selectedParameter.description }}</p>
             <section v-if="selectedParameter.recommendation" class="parameter-read-note">
-              <span>Recommendation when missed</span>
+              <span>Action suggestion when missed</span>
               <p>{{ selectedParameter.recommendation }}</p>
             </section>
             <section v-if="selectedParameter.promptGuidance" class="parameter-read-note">
@@ -632,7 +632,7 @@ function splitList(value) {
 
             <div class="parameter-read-grid">
               <label class="inline-edit-field">
-                <span>Recommendation when missed</span>
+                <span>Action suggestion when missed</span>
                 <textarea v-model="selectedParameter.recommendation" rows="4"></textarea>
               </label>
               <label class="inline-edit-field">

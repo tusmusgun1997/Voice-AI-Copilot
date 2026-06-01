@@ -1,4 +1,6 @@
 <script setup>
+import { HelpCircle } from '@lucide/vue';
+
 defineProps({
   agentDrafts: {
     type: Object,
@@ -67,20 +69,57 @@ defineEmits(['cancel-edit-agent', 'save-agent', 'show-agent-calls', 'show-call',
     </div>
 
     <div class="agent-detail-columns">
-      <section class="agent-subsection prompt-subsection">
+      <section class="agent-subsection prompt-subsection wide">
         <div class="agent-section-head compact">
           <div>
-            <p class="eyebrow">Prompt</p>
-            <h4>Agent role & objective</h4>
+            <p class="eyebrow">Prompt & configuration</p>
+            <h4>Agent role, objective, and setup</h4>
           </div>
-          <button
-            v-if="editingAgentId !== selectedAgentPanel.id"
-            class="text-button compact"
-            type="button"
-            @click="$emit('start-edit-agent', selectedAgentPanel)"
-          >
-            Edit prompt
-          </button>
+          <div class="agent-context-actions">
+            <div class="config-help" tabindex="0">
+              <button class="icon-button compact" type="button" aria-label="Show agent configuration">
+                <HelpCircle :size="16" />
+              </button>
+              <div class="config-tooltip" role="tooltip">
+                <p class="eyebrow">Configuration</p>
+                <div class="agent-detail-list compact">
+                  <div>
+                    <span>Business</span>
+                    <strong>{{ selectedAgentPanel.businessName || 'Not set' }}</strong>
+                  </div>
+                  <div>
+                    <span>Language</span>
+                    <strong>{{ selectedAgentPanel.language || 'Not set' }}</strong>
+                  </div>
+                  <div>
+                    <span>Timezone</span>
+                    <strong>{{ selectedAgentPanel.timezone || 'Not set' }}</strong>
+                  </div>
+                  <div>
+                    <span>Inbound number</span>
+                    <strong>{{ selectedAgentPanel.inboundNumber || 'Not assigned' }}</strong>
+                  </div>
+                  <div>
+                    <span>Voice ID</span>
+                    <strong>{{ selectedAgentPanel.voiceId || 'Not set' }}</strong>
+                  </div>
+                  <div>
+                    <span>HighLevel agent ID</span>
+                    <strong>{{ selectedAgentPanel.id }}</strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <button
+              v-if="editingAgentId !== selectedAgentPanel.id"
+              class="text-button compact"
+              type="button"
+              @click="$emit('start-edit-agent', selectedAgentPanel)"
+            >
+              Edit prompt
+            </button>
+          </div>
         </div>
 
         <p v-if="editingAgentId !== selectedAgentPanel.id" class="agent-description">
@@ -89,6 +128,11 @@ defineEmits(['cancel-edit-agent', 'save-agent', 'show-agent-calls', 'show-call',
             'No AGENT ROLE & OBJECTIVE section is available from HighLevel yet.'
           }}
         </p>
+
+        <section v-if="editingAgentId !== selectedAgentPanel.id" class="agent-greeting-inline">
+          <span>Welcome message</span>
+          <p>{{ selectedAgentPanel.welcomeMessage || 'No welcome message configured.' }}</p>
+        </section>
 
         <div v-else class="prompt-inline-editor">
           <label class="inline-edit-field">
@@ -113,57 +157,6 @@ defineEmits(['cancel-edit-agent', 'save-agent', 'show-agent-calls', 'show-call',
             </button>
           </div>
         </div>
-      </section>
-
-      <section class="agent-subsection">
-        <p class="eyebrow">Configuration</p>
-        <div class="agent-detail-list">
-          <div>
-            <span>Business</span>
-            <strong>{{ selectedAgentPanel.businessName || 'Not set' }}</strong>
-          </div>
-          <div>
-            <span>Language</span>
-            <strong>{{ selectedAgentPanel.language || 'Not set' }}</strong>
-          </div>
-          <div>
-            <span>Timezone</span>
-            <strong>{{ selectedAgentPanel.timezone || 'Not set' }}</strong>
-          </div>
-          <div>
-            <span>Inbound number</span>
-            <strong>{{ selectedAgentPanel.inboundNumber || 'Not assigned' }}</strong>
-          </div>
-          <div>
-            <span>Voice ID</span>
-            <strong>{{ selectedAgentPanel.voiceId || 'Not set' }}</strong>
-          </div>
-          <div>
-            <span>HighLevel agent ID</span>
-            <strong>{{ selectedAgentPanel.id }}</strong>
-          </div>
-        </div>
-      </section>
-
-      <section class="agent-subsection">
-        <p class="eyebrow">Greeting</p>
-        <h4>Welcome message</h4>
-        <p class="agent-note">
-          {{ selectedAgentPanel.welcomeMessage || 'No welcome message configured.' }}
-        </p>
-      </section>
-
-      <section class="agent-subsection">
-        <p class="eyebrow">HighLevel goals</p>
-        <h4>{{ selectedAgentPanel.configuredActionCount || 0 }} configured</h4>
-        <div class="mini-chip-row">
-          <span v-for="goal in (selectedAgentPanel.actions || []).slice(0, 4)" :key="goal.id">
-            {{ goal.name || goal.actionType || 'Goal' }}
-          </span>
-        </div>
-        <p v-if="!(selectedAgentPanel.actions || []).length" class="agent-note">
-          No HighLevel goals/actions returned for this agent.
-        </p>
       </section>
 
       <section class="agent-subsection wide">

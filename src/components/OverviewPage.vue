@@ -43,10 +43,6 @@ const props = defineProps({
   selectedAgentName: {
     type: String,
     required: true
-  },
-  topRecommendation: {
-    type: Object,
-    default: null
   }
 });
 
@@ -149,23 +145,6 @@ function setupMessage() {
           </button>
           <p v-if="overviewIssues.length === 0" class="empty-copy">No critical signals for the current filters.</p>
         </div>
-      </article>
-
-      <article class="overview-panel">
-        <div class="overview-panel-heading">
-          <div>
-            <p class="eyebrow">Recommendations</p>
-            <h2>{{ topRecommendation?.title || 'No urgent recommendation' }}</h2>
-          </div>
-        </div>
-        <p>{{ topRecommendation?.detail || 'Current calls are meeting the configured observability checks.' }}</p>
-        <button
-          class="text-button compact"
-          type="button"
-          @click="topRecommendation?.callId ? $emit('show-call', topRecommendation.callId) : $emit('set-view', 'calls')"
-        >
-          Open source
-        </button>
       </article>
 
       <article class="overview-panel">

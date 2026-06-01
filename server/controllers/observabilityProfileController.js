@@ -1,16 +1,10 @@
-import { loadAgentGoalProfiles } from '../agentGoals.js';
 import {
   getAgentObservabilityProfile,
   listSavedObservabilityProfiles,
   saveAgentObservabilityProfile
 } from '../observabilityProfiles.js';
 
-export function createObservabilityProfileController({ agentGoalsFile, localDataFile }) {
-  async function listAgentGoals(_request, response) {
-    const goalProfiles = await loadAgentGoalProfiles(agentGoalsFile);
-    response.json(goalProfiles);
-  }
-
+export function createObservabilityProfileController({ localDataFile }) {
   async function listProfiles(_request, response) {
     const result = await listSavedObservabilityProfiles(localDataFile);
     response.json(result);
@@ -44,7 +38,6 @@ export function createObservabilityProfileController({ agentGoalsFile, localData
   }
 
   return {
-    listAgentGoals,
     listProfiles,
     getProfile,
     saveProfile
