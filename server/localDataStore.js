@@ -12,18 +12,18 @@ const EMPTY_STORE = {
 const WRITE_ERROR_CODES = new Set(['EACCES', 'EPERM']);
 const writeLocks = new Map();
 
-export async function readCollection(filePath, key) {
+export async function readCollection(filePath, key, locationId) {
   if (isSupabaseStoreEnabled()) {
-    return readSupabaseCollection(key);
+    return readSupabaseCollection(key, locationId);
   }
 
   const store = await readStore(filePath);
   return Array.isArray(store[key]) ? store[key] : [];
 }
 
-export async function writeCollection(filePath, key, items) {
+export async function writeCollection(filePath, key, items, locationId) {
   if (isSupabaseStoreEnabled()) {
-    return writeSupabaseCollection(key, items);
+    return writeSupabaseCollection(key, items, locationId);
   }
 
   const resolvedPath = resolveStorePath(filePath);

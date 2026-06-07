@@ -4,16 +4,18 @@ import {
   isSupabaseStoreEnabled,
   updateSupabaseHumanAction
 } from '../services/supabaseStore.js';
-import { cleanString } from '../utils/http.js';
+import { cleanString, extractLocationId } from '../utils/http.js';
 
 export function createCallController({ analysisQueue, highLevelService, localDataFile, defaultLocationId }) {
   async function listCallLogs(request, response) {
-    const result = await highLevelService.loadCallLogs(request.query);
+    const locationId = extractLocationId(request);
+    const result = await highLevelService.loadCallLogs(request.query, locationId);
     response.json(result);
   }
 
-  async function listAnalyses(_request, response) {
-    const analyses = await listCallAnalyses(localDataFile);
+  async function listAnalyses(request, response) {
+    const locationId = extractLocationId(request);
+    const analyses = await listCallAnalyses(localDataFile, locationId);
     response.json({
       analyses,
       total: analyses.length
@@ -21,7 +23,8 @@ export function createCallController({ analysisQueue, highLevelService, localDat
   }
 
   async function getAnalysis(request, response) {
-    const analysis = await getCallAnalysis(request.params.callId, localDataFile);
+    const locationId = extractLocationId(request);
+    const analysis = await getCallAnalysis(request.params.callId, localDataFile, locationId);
 
     if (!analysis) {
       response.status(404).json({
@@ -35,7 +38,9 @@ export function createCallController({ analysisQueue, highLevelService, localDat
   }
 
   async function analyzeCall(request, response) {
-    if (!highLevelService.hasConfig()) {
+    const locationId = extractLocationId(request) || defaultLocationId;
+
+    if (!highLevelService.hasConfig(locationId)) {
       response.status(400).json({
         message: 'HighLevel token and location ID are required before analyzing a call.',
         status: 400
@@ -45,7 +50,6 @@ export function createCallController({ analysisQueue, highLevelService, localDat
 
     const callId = cleanString(request.params.callId);
     const agentId = cleanString(request.body?.agentId || request.query.agentId);
-    const locationId = cleanString(request.body?.locationId || request.query.locationId || defaultLocationId);
 
     if (!callId) {
       response.status(400).json({
@@ -75,9 +79,10 @@ export function createCallController({ analysisQueue, highLevelService, localDat
     });
   }
 
-  async function listAnalysisJobs(_request, response) {
+  async function listAnalysisJobs(request, response) {
+    const locationId = extractLocationId(request);
     response.json({
-      jobs: await analysisQueue.listJobs()
+      jobs: await analysisQueue.listJobs(locationId)
     });
   }
 

@@ -1,5 +1,17 @@
 const DEFAULT_BASE_URL = 'https://services.leadconnectorhq.com';
 
+export function getHighLevelAuthUrl({ clientId, redirectUri, scopes = [], userType = 'Location' }) {
+  const params = new URLSearchParams({
+    response_type: 'code',
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    scope: Array.isArray(scopes) ? scopes.join(' ') : scopes,
+    user_type: userType
+  });
+
+  return `https://marketplace.gohighlevel.com/oauth/chooselocation?${params}`;
+}
+
 export async function exchangeHighLevelCode({
   code,
   clientId,

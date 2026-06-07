@@ -17,15 +17,19 @@ import { createCallAnalysisQueue } from './callAnalysisQueue.js';
 import { createApiRouter } from './routes/apiRoutes.js';
 import { createDashboardService } from './services/dashboardService.js';
 import { createHighLevelService } from './services/highLevelService.js';
-import { createErrorHandler } from './utils/http.js';
+import { createAuthMiddleware, createErrorHandler } from './utils/http.js';
 
 dotenv.config();
 
 const app = express();
 const config = createServerConfig();
+const authMiddleware = createAuthMiddleware(config.auth.jwtSecret);
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const distPath = path.resolve(currentDir, '..', 'dist');
-const highLevelService = createHighLevelService(config.highLevel);
+const highLevelService = createHighLevelService({
+  ...config.highLevel,
+  oauth: config.oauth
+});
 const analysisQueue = createCallAnalysisQueue({
   highLevelToken: config.highLevel.token,
   locationId: config.highLevel.locationId,
@@ -38,14 +42,15 @@ const analysisQueue = createCallAnalysisQueue({
   openAiApiKey: config.openAi.apiKey,
   openAiModel: config.openAi.model,
   maxAttempts: config.analysis.maxAttempts,
-  retryDelayMs: config.analysis.retryDelayMs
+  retryDelayMs: config.analysis.retryDelayMs,
+  oauth: config.oauth
 });
 const dashboardService = createDashboardService({
   highLevelService,
   localDataFile: config.localDataFile,
-  locationId: config.highLevel.locationId,
   useDemoDataWhenEmpty: config.dashboard.useDemoDataWhenEmpty,
-  showDeletedAgentCalls: config.dashboard.showDeletedAgentCalls
+  showDeletedAgentCalls: config.dashboard.showDeletedAgentCalls,
+  oauthConfig: config.oauth
 });
 
 const controllers = {
@@ -62,7 +67,7 @@ const controllers = {
     localDataFile: config.localDataFile
   }),
   parameterVersions: createParameterVersionController({ localDataFile: config.localDataFile }),
-  oauth: createOAuthController({ oauthConfig: config.oauth }),
+  oauth: createOAuthController({ oauthConfig: config.oauth, authConfig: config.auth }),
   webhooks: createWebhookController({
     analysisQueue,
     localDataFile: config.localDataFile,
@@ -72,7 +77,7 @@ const controllers = {
 
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
-app.use('/api', createApiRouter(controllers));
+app.use('/api', createApiRouter(controllers, authMiddleware));
 
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));

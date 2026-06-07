@@ -5,10 +5,10 @@ import { getParameterVersion } from './parameterVersions.js';
 const DEFAULT_PROFILES_FILE = DEFAULT_LOCAL_DATA_FILE;
 const DEFAULT_VERSIONS_FILE = DEFAULT_LOCAL_DATA_FILE;
 
-export async function loadObservabilityProfiles(filePath = DEFAULT_PROFILES_FILE, versionsFilePath = DEFAULT_VERSIONS_FILE) {
-  const customProfiles = await readProfiles(filePath);
+export async function loadObservabilityProfiles(filePath = DEFAULT_PROFILES_FILE, versionsFilePath = DEFAULT_VERSIONS_FILE, locationId) {
+  const customProfiles = await readProfiles(filePath, locationId);
   const resolvedProfiles = await Promise.all(
-    customProfiles.map((profile) => resolveVersionedProfile(normalizeProfile(profile, { useDefaults: false }), versionsFilePath))
+    customProfiles.map((profile) => resolveVersionedProfile(normalizeProfile(profile, { useDefaults: false }), versionsFilePath, locationId))
   );
   const profiles = [defaultGoalProfile, ...resolvedProfiles];
 
@@ -18,27 +18,29 @@ export async function loadObservabilityProfiles(filePath = DEFAULT_PROFILES_FILE
   };
 }
 
-export async function listSavedObservabilityProfiles(filePath = DEFAULT_PROFILES_FILE) {
+export async function listSavedObservabilityProfiles(filePath = DEFAULT_PROFILES_FILE, locationId) {
   return {
-    profiles: (await readProfiles(filePath)).map((profile) => normalizeProfile(profile, { useDefaults: false }))
+    profiles: (await readProfiles(filePath, locationId)).map((profile) => normalizeProfile(profile, { useDefaults: false }))
   };
 }
 
 export async function getAgentObservabilityProfile(
   agent,
   filePath = DEFAULT_PROFILES_FILE,
-  versionsFilePath = DEFAULT_VERSIONS_FILE
+  versionsFilePath = DEFAULT_VERSIONS_FILE,
+  locationId
 ) {
-  const profiles = (await readProfiles(filePath)).map((profile) => normalizeProfile(profile, { useDefaults: false }));
+  const profiles = (await readProfiles(filePath, locationId)).map((profile) => normalizeProfile(profile, { useDefaults: false }));
   const existing = findProfileForAgent(profiles, agent);
-  return resolveVersionedProfile(existing ?? createEmptyAgentProfile(agent), versionsFilePath);
+  return resolveVersionedProfile(existing ?? createEmptyAgentProfile(agent), versionsFilePath, locationId);
 }
 
 export async function saveAgentObservabilityProfile(
   agentId,
   profile,
   filePath = DEFAULT_PROFILES_FILE,
-  versionsFilePath = DEFAULT_VERSIONS_FILE
+  versionsFilePath = DEFAULT_VERSIONS_FILE,
+  locationId
 ) {
   if (!agentId) {
     const error = new Error('Missing agentId');
@@ -46,7 +48,7 @@ export async function saveAgentObservabilityProfile(
     throw error;
   }
 
-  const profiles = await readProfiles(filePath);
+  const profiles = await readProfiles(filePath, locationId);
   const normalized = normalizeProfile(
     {
       ...profile,
@@ -57,8 +59,8 @@ export async function saveAgentObservabilityProfile(
   );
   const nextProfiles = profiles.filter((item) => !(item.agentIds ?? []).includes(agentId));
   nextProfiles.push(toStorageProfile(normalized));
-  await writeProfiles(nextProfiles, filePath);
-  return resolveVersionedProfile(normalized, versionsFilePath);
+  await writeProfiles(nextProfiles, filePath, locationId);
+  return resolveVersionedProfile(normalized, versionsFilePath, locationId);
 }
 
 function createEmptyAgentProfile(agent = {}) {
@@ -87,16 +89,16 @@ function findProfileForAgent(profiles, agent = {}) {
   });
 }
 
-async function readProfiles(filePath) {
+async function readProfiles(filePath, locationId) {
   try {
-    return readCollection(filePath, 'profiles');
+    return readCollection(filePath, 'profiles', locationId);
   } catch (error) {
     throw new Error(`Unable to load observability profiles: ${error.message}`);
   }
 }
 
-async function writeProfiles(profiles, filePath) {
-  await writeCollection(filePath, 'profiles', profiles);
+async function writeProfiles(profiles, filePath, locationId) {
+  await writeCollection(filePath, 'profiles', profiles, locationId);
 }
 
 function normalizeProfile(profile = {}, options = {}) {
@@ -121,10 +123,10 @@ function normalizeProfile(profile = {}, options = {}) {
   };
 }
 
-async function resolveVersionedProfile(profile, versionsFilePath) {
+async function resolveVersionedProfile(profile, versionsFilePath, locationId) {
   if (!profile?.parameterVersionId) return profile;
 
-  const version = await getParameterVersion(profile.parameterVersionId, versionsFilePath);
+  const version = await getParameterVersion(profile.parameterVersionId, versionsFilePath, locationId);
   if (!version) return profile;
 
   return normalizeProfile(

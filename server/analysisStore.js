@@ -3,21 +3,22 @@ import { DEFAULT_LOCAL_DATA_FILE, readCollection, writeCollection } from './loca
 const DEFAULT_RESULTS_FILE = DEFAULT_LOCAL_DATA_FILE;
 let writeLock = Promise.resolve();
 
-export async function listCallAnalyses(filePath = DEFAULT_RESULTS_FILE) {
-  return readStore(filePath);
+export async function listCallAnalyses(filePath = DEFAULT_RESULTS_FILE, locationId) {
+  return readStore(filePath, locationId);
 }
 
-export async function getCallAnalysis(callId, filePath = DEFAULT_RESULTS_FILE) {
+export async function getCallAnalysis(callId, filePath = DEFAULT_RESULTS_FILE, locationId) {
   if (!callId) return null;
-  const analyses = await readStore(filePath);
+  const analyses = await readStore(filePath, locationId);
   return analyses.find((analysis) => analysis.callId === callId) ?? null;
 }
 
 export async function upsertCallAnalysis(record, filePath = DEFAULT_RESULTS_FILE) {
   const nextRecord = normalizeRecord(record);
+  const locationId = nextRecord.locationId;
 
   writeLock = writeLock.then(async () => {
-    const analyses = await readStore(filePath);
+    const analyses = await readStore(filePath, locationId);
     const index = analyses.findIndex((analysis) => analysis.callId === nextRecord.callId);
     const current = index >= 0 ? analyses[index] : {};
     const merged = normalizeRecord({
@@ -31,19 +32,19 @@ export async function upsertCallAnalysis(record, filePath = DEFAULT_RESULTS_FILE
       ? analyses.map((analysis, itemIndex) => (itemIndex === index ? merged : analysis))
       : [...analyses, merged];
 
-    await writeStore(nextAnalyses, filePath);
+    await writeStore(nextAnalyses, filePath, locationId);
     return merged;
   });
 
   return writeLock;
 }
 
-export async function updateHumanAction(actionId, patch = {}, filePath = DEFAULT_RESULTS_FILE) {
+export async function updateHumanAction(actionId, patch = {}, filePath = DEFAULT_RESULTS_FILE, locationId) {
   const id = cleanString(actionId);
   if (!id) return null;
 
   writeLock = writeLock.then(async () => {
-    const analyses = await readStore(filePath);
+    const analyses = await readStore(filePath, locationId);
     let updatedAction = null;
     const nextAnalyses = analyses.map((analysis) => {
       let didUpdateAnalysis = false;
@@ -68,19 +69,19 @@ export async function updateHumanAction(actionId, patch = {}, filePath = DEFAULT
 
     if (!updatedAction) return null;
 
-    await writeStore(nextAnalyses, filePath);
+    await writeStore(nextAnalyses, filePath, locationId);
     return updatedAction;
   });
 
   return writeLock;
 }
 
-export async function deleteHumanAction(actionId, filePath = DEFAULT_RESULTS_FILE) {
+export async function deleteHumanAction(actionId, filePath = DEFAULT_RESULTS_FILE, locationId) {
   const id = cleanString(actionId);
   if (!id) return false;
 
   writeLock = writeLock.then(async () => {
-    const analyses = await readStore(filePath);
+    const analyses = await readStore(filePath, locationId);
     let deleted = false;
     const nextAnalyses = analyses.map((analysis) => {
       const currentLength = (analysis.useActions ?? []).length;
@@ -97,23 +98,23 @@ export async function deleteHumanAction(actionId, filePath = DEFAULT_RESULTS_FIL
 
     if (!deleted) return false;
 
-    await writeStore(nextAnalyses, filePath);
+    await writeStore(nextAnalyses, filePath, locationId);
     return true;
   });
 
   return writeLock;
 }
 
-async function readStore(filePath) {
+async function readStore(filePath, locationId) {
   try {
-    return (await readCollection(filePath, 'analyses')).map(normalizeRecord);
+    return (await readCollection(filePath, 'analyses', locationId)).map(normalizeRecord);
   } catch (error) {
     throw new Error(`Unable to load call analysis results: ${error.message}`);
   }
 }
 
-async function writeStore(analyses, filePath) {
-  await writeCollection(filePath, 'analyses', analyses);
+async function writeStore(analyses, filePath, locationId) {
+  await writeCollection(filePath, 'analyses', analyses, locationId);
 }
 
 function normalizeRecord(record = {}) {

@@ -36,6 +36,9 @@ export function createServerConfig(env = process.env) {
       supabaseServiceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
       supabaseInstallationName: env.SUPABASE_INSTALLATION_NAME,
       supabaseIsSandbox: String(env.SUPABASE_IS_SANDBOX || 'true') === 'true'
+    },
+    auth: {
+      jwtSecret: env.JWT_SECRET || 'voice-ai-copilot-dev-secret-key'
     }
   };
 }

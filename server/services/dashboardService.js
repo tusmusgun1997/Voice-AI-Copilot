@@ -8,26 +8,27 @@ import { getAgentId, getCallAgentId } from './highLevelService.js';
 export function createDashboardService({
   highLevelService,
   localDataFile,
-  locationId,
   useDemoDataWhenEmpty = true,
-  showDeletedAgentCalls = false
+  showDeletedAgentCalls = false,
+  oauthConfig
 } = {}) {
-  async function getDashboard(query = {}) {
+  async function getDashboard(query = {}, locationId) {
     const mode = String(query.mode || 'auto');
+    const effectiveLocationId = locationId || query.locationId;
     let liveResult = null;
     let agentsResult = null;
     let liveError = null;
     let agentsError = null;
 
-    if (mode !== 'demo' && highLevelService.hasConfig()) {
+    if (mode !== 'demo' && highLevelService.hasConfig(effectiveLocationId)) {
       try {
-        liveResult = await highLevelService.loadCallLogs(query);
+        liveResult = await highLevelService.loadCallLogs(query, effectiveLocationId);
       } catch (error) {
         liveError = toClientError(error);
       }
 
       try {
-        agentsResult = await highLevelService.loadAgents();
+        agentsResult = await highLevelService.loadAgents(effectiveLocationId);
       } catch (error) {
         agentsError = toClientError(error);
       }
@@ -43,12 +44,12 @@ export function createDashboardService({
       await cleanupDeletedAgentData({
         activeAgentIds: Array.from(activeAgentIds),
         localDataFile,
-        locationId,
+        locationId: effectiveLocationId,
         allowEmptyActiveSet: true
       });
     }
 
-    const goalProfiles = await loadObservabilityProfiles(localDataFile, localDataFile);
+    const goalProfiles = await loadObservabilityProfiles(localDataFile, localDataFile, effectiveLocationId);
     const filteredLiveLogs =
       hasAuthoritativeAgentDirectory && !showDeletedAgentCalls
         ? liveLogs.filter((call) => activeAgentIds.has(getCallAgentId(call)))
@@ -57,13 +58,13 @@ export function createDashboardService({
     const dashboard = buildObservabilityDashboard(callLogs, goalProfiles, shouldUseDemo ? [] : agentsResult?.agents ?? [], {
       includeCallOnlyAgents: !hasAuthoritativeAgentDirectory
     });
-    const storedAnalyses = await listCallAnalyses(localDataFile);
-    const enrichedDashboard = applyStoredAnalyses(dashboard, storedAnalyses, locationId);
+    const storedAnalyses = await listCallAnalyses(localDataFile, effectiveLocationId);
+    const enrichedDashboard = applyStoredAnalyses(dashboard, storedAnalyses, effectiveLocationId);
 
     return {
       dataSource: shouldUseDemo ? 'demo' : liveLogs.length > 0 ? 'highlevel' : 'empty',
       generatedAt: new Date().toISOString(),
-      locationId: locationId || null,
+      locationId: effectiveLocationId || null,
       liveRecordCount: liveResult?.totalRecords ?? liveLogs.length,
       visibleRecordCount: callLogs.length,
       liveAgentCount: agentsResult?.totalRecords ?? agentsResult?.agents?.length ?? null,

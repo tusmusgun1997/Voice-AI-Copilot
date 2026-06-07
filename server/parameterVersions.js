@@ -126,8 +126,8 @@ export const defaultParameterTemplates = [
   }
 ];
 
-export async function listParameterVersions(filePath = DEFAULT_VERSIONS_FILE) {
-  const customVersions = await readVersions(filePath);
+export async function listParameterVersions(filePath = DEFAULT_VERSIONS_FILE, locationId) {
+  const customVersions = await readVersions(filePath, locationId);
   const versions = [
     defaultParameterVersion,
     ...customVersions.map((version) => normalizeVersion(version, { locked: false }))
@@ -140,13 +140,13 @@ export async function listParameterVersions(filePath = DEFAULT_VERSIONS_FILE) {
   };
 }
 
-export async function getParameterVersion(versionId, filePath = DEFAULT_VERSIONS_FILE) {
-  const { versions } = await listParameterVersions(filePath);
+export async function getParameterVersion(versionId, filePath = DEFAULT_VERSIONS_FILE, locationId) {
+  const { versions } = await listParameterVersions(filePath, locationId);
   return versions.find((version) => version.id === versionId) ?? null;
 }
 
-export async function createParameterVersion(input = {}, filePath = DEFAULT_VERSIONS_FILE) {
-  const versions = await readVersions(filePath);
+export async function createParameterVersion(input = {}, filePath = DEFAULT_VERSIONS_FILE, locationId) {
+  const versions = await readVersions(filePath, locationId);
   const source = findTemplate(input.sourceTemplateId) ?? defaultParameterVersion;
   const now = new Date().toISOString();
   const shouldCopyTemplateParameters = input.includeTemplateParameters !== false;
@@ -159,22 +159,22 @@ export async function createParameterVersion(input = {}, filePath = DEFAULT_VERS
     {
       id: uniqueVersionId(input.name || source.name, input.versionLabel || nextVersionLabel(versions, source.name), versions),
       name: input.name || source.name,
-      versionLabel: input.versionLabel || nextVersionLabel(versions, source.name),
+      version_label: input.versionLabel || nextVersionLabel(versions, source.name),
       description: input.description || source.description,
-      sourceTemplateId: source.id,
+      source_version_id: source.id,
       parameters,
-      createdAt: now,
-      updatedAt: now
+      created_at: now,
+      updated_at: now
     },
     { locked: false }
   );
 
   versions.push(toStoredVersion(normalized));
-  await writeVersions(versions, filePath);
+  await writeVersions(versions, filePath, locationId);
   return normalized;
 }
 
-export async function updateParameterVersion(versionId, input = {}, filePath = DEFAULT_VERSIONS_FILE) {
+export async function updateParameterVersion(versionId, input = {}, filePath = DEFAULT_VERSIONS_FILE, locationId) {
   if (!versionId) {
     const error = new Error('Missing versionId');
     error.status = 400;
@@ -187,7 +187,7 @@ export async function updateParameterVersion(versionId, input = {}, filePath = D
     throw error;
   }
 
-  const versions = await readVersions(filePath);
+  const versions = await readVersions(filePath, locationId);
   const index = versions.findIndex((version) => version.id === versionId);
 
   if (index < 0) {
@@ -207,7 +207,7 @@ export async function updateParameterVersion(versionId, input = {}, filePath = D
     { locked: false }
   );
   versions[index] = toStoredVersion(normalized);
-  await writeVersions(versions, filePath);
+  await writeVersions(versions, filePath, locationId);
   return normalized;
 }
 
@@ -254,16 +254,16 @@ function normalizeVersion(version = {}, options = {}) {
   };
 }
 
-async function readVersions(filePath) {
+async function readVersions(filePath, locationId) {
   try {
-    return readCollection(filePath, 'versions');
+    return readCollection(filePath, 'versions', locationId);
   } catch (error) {
     throw new Error(`Unable to load LLM parameter versions: ${error.message}`);
   }
 }
 
-async function writeVersions(versions, filePath) {
-  await writeCollection(filePath, 'versions', versions);
+async function writeVersions(versions, filePath, locationId) {
+  await writeCollection(filePath, 'versions', versions, locationId);
 }
 
 function toStoredVersion(version) {

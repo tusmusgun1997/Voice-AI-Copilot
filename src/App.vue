@@ -48,7 +48,31 @@ const profileEditMessage = ref('');
 const analyzingCallIds = ref({});
 const parameterVersions = ref([]);
 const llmParameterFocusVersionId = ref('');
+const locationId = ref('');
+const sessionToken = ref(localStorage.getItem('ghl_session_token') || '');
+const isLoggedIn = computed(() => Boolean(sessionToken.value));
 let dashboardRefreshTimer = null;
+
+async function handleSignIn() {
+  try {
+    const response = await apiFetch('/api/oauth/auth-url');
+    const { url } = await response.json();
+    if (url) {
+      window.location.href = url;
+    }
+  } catch (err) {
+    error.value = 'Failed to initiate sign in: ' + err.message;
+  }
+}
+
+function handleSignOut() {
+  sessionToken.value = '';
+  localStorage.removeItem('ghl_session_token');
+  dashboard.value = null;
+  if (dashboardRefreshTimer) {
+    window.clearInterval(dashboardRefreshTimer);
+  }
+}
 
 const navItems = computed(() => [
   {
@@ -245,12 +269,28 @@ onMounted(() => {
   window.addEventListener('popstate', syncRouteFromLocation);
   window.addEventListener('hashchange', syncRouteFromLocation);
 
-  loadDashboard();
-  loadParameterVersions();
-  dashboardRefreshTimer = window.setInterval(() => {
-    if (editingAgentId.value || editingProfileAgentId.value) return;
-    loadDashboard({ silent: true });
-  }, 12000);
+  const urlParams = new URLSearchParams(window.location.search);
+  const tokenFromUrl = urlParams.get('token');
+  
+  if (tokenFromUrl) {
+    sessionToken.value = tokenFromUrl;
+    localStorage.setItem('ghl_session_token', tokenFromUrl);
+    // Clean up URL
+    urlParams.delete('token');
+    const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '') + window.location.hash;
+    window.history.replaceState({}, '', newUrl);
+  }
+
+  locationId.value = urlParams.get('location_id') || urlParams.get('locationId') || '';
+
+  if (isLoggedIn.value) {
+    loadDashboard();
+    loadParameterVersions();
+    dashboardRefreshTimer = window.setInterval(() => {
+      if (editingAgentId.value || editingProfileAgentId.value) return;
+      loadDashboard({ silent: true });
+    }, 12000);
+  }
 });
 
 onUnmounted(() => {
@@ -261,6 +301,22 @@ onUnmounted(() => {
   window.removeEventListener('hashchange', syncRouteFromLocation);
 });
 
+async function apiFetch(url, options = {}) {
+  const headers = {
+    ...options.headers,
+    'X-Location-Id': locationId.value,
+    'Authorization': sessionToken.value ? `Bearer ${sessionToken.value}` : ''
+  };
+
+  const response = await fetch(url, { ...options, headers });
+  
+  if (response.status === 401 || response.status === 403) {
+    handleSignOut();
+  }
+  
+  return response;
+}
+
 async function loadDashboard(options = {}) {
   const silent = options.silent === true;
   if (!silent) {
@@ -269,7 +325,7 @@ async function loadDashboard(options = {}) {
   }
 
   try {
-    const response = await fetch('/api/observability');
+    const response = await apiFetch('/api/observability');
     const body = await response.json();
 
     if (!response.ok) {
@@ -295,7 +351,7 @@ async function loadDashboard(options = {}) {
 
 async function loadSavedObservabilityProfiles(options = {}) {
   try {
-    const response = await fetch('/api/agent-observability-profiles');
+    const response = await apiFetch('/api/agent-observability-profiles');
     const body = await response.json();
 
     if (!response.ok) {
@@ -318,7 +374,7 @@ async function loadSavedObservabilityProfiles(options = {}) {
 
 async function loadParameterVersions() {
   try {
-    const response = await fetch('/api/llm-parameter-versions');
+    const response = await apiFetch('/api/llm-parameter-versions');
     const body = await response.json();
 
     if (!response.ok) {
@@ -532,7 +588,7 @@ async function saveAgent(agent) {
   agentEditMessage.value = '';
 
   try {
-    const response = await fetch(`/api/agents/${agent.id}`, {
+    const response = await apiFetch(`/api/agents/${agent.id}`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json'
@@ -570,7 +626,7 @@ async function loadAgentObservabilityProfile(agentId, options = {}) {
   }
 
   try {
-    const response = await fetch(`/api/agent-observability-profiles/${agentId}?${params}`);
+    const response = await apiFetch(`/api/agent-observability-profiles/${agentId}?${params}`);
     const body = await response.json();
 
     if (!response.ok) {
@@ -679,7 +735,7 @@ async function saveObservabilityProfile(agent) {
   profileEditMessage.value = '';
 
   try {
-    const response = await fetch(`/api/agent-observability-profiles/${agent.id}`, {
+    const response = await apiFetch(`/api/agent-observability-profiles/${agent.id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json'
@@ -736,7 +792,7 @@ async function applyParameterVersionToAgent(payload = {}) {
   };
 
   try {
-    const response = await fetch(`/api/agent-observability-profiles/${agent.id}`, {
+    const response = await apiFetch(`/api/agent-observability-profiles/${agent.id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json'
@@ -787,14 +843,14 @@ async function analyzeCall(call) {
   error.value = '';
 
   try {
-    const response = await fetch(`/api/call-analyses/${call.id}/analyze`, {
+    const response = await apiFetch(`/api/call-analyses/${call.id}/analyze`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         agentId: call.agentId,
-        locationId: dashboard.value?.locationId
+        locationId: locationId.value || dashboard.value?.locationId
       })
     });
     const body = await response.json().catch(() => ({}));
@@ -819,7 +875,7 @@ async function updateHumanActionStatus(action, status) {
   error.value = '';
 
   try {
-    const response = await fetch(`/api/human-actions/${encodeURIComponent(action.id)}`, {
+    const response = await apiFetch(`/api/human-actions/${encodeURIComponent(action.id)}`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json'
@@ -844,7 +900,7 @@ async function deleteHumanAction(action) {
   error.value = '';
 
   try {
-    const response = await fetch(`/api/human-actions/${encodeURIComponent(action.id)}`, {
+    const response = await apiFetch(`/api/human-actions/${encodeURIComponent(action.id)}`, {
       method: 'DELETE'
     });
     const body = await response.json().catch(() => ({}));
@@ -1211,7 +1267,22 @@ const helpers = {
 </script>
 
 <template>
-  <main class="app-frame" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
+  <main v-if="!isLoggedIn" class="login-frame">
+    <section class="login-card">
+      <div class="login-header">
+        <Activity :size="32" class="brand-icon" />
+        <h1>Voice AI Copilot</h1>
+        <p>Sign in with your HighLevel account to continue</p>
+      </div>
+      <button class="login-button" type="button" @click="handleSignIn">
+        <img src="https://storage.googleapis.com/msgsndr/W06v7S7H7Uv6N0q6Y5vV/media/6467776b92f447781b0f5b8c.png" alt="GHL" class="ghl-logo" />
+        <span>Sign in with HighLevel</span>
+      </button>
+      <p v-if="error" class="login-error">{{ error }}</p>
+    </section>
+  </main>
+
+  <main v-else class="app-frame" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
     <AppSidebar
       :active-view="activeView"
       :collapsed="sidebarCollapsed"
@@ -1227,6 +1298,7 @@ const helpers = {
         :loading="loading"
         :source-label="sourceLabel"
         @refresh="loadDashboard"
+        @sign-out="handleSignOut"
       />
 
       <section v-if="error" class="error-band">

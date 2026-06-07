@@ -1,10 +1,16 @@
 import { Router } from 'express';
 import { asyncHandler } from '../utils/http.js';
 
-export function createApiRouter(controllers) {
+export function createApiRouter(controllers, authMiddleware) {
   const router = Router();
 
   router.get('/health', controllers.health.getHealth);
+  router.get('/oauth/auth-url', asyncHandler(controllers.oauth.getAuthUrl));
+  router.get('/oauth/callback', asyncHandler(controllers.oauth.callback));
+
+  // Protected routes
+  router.use(authMiddleware);
+
   router.get('/call-logs', asyncHandler(controllers.calls.listCallLogs));
   router.get('/call-analyses', asyncHandler(controllers.calls.listAnalyses));
   router.get('/call-analyses/:callId', asyncHandler(controllers.calls.getAnalysis));
@@ -24,7 +30,6 @@ export function createApiRouter(controllers) {
   router.get('/agents/:agentId', asyncHandler(controllers.agents.getAgent));
   router.patch('/agents/:agentId', asyncHandler(controllers.agents.updateAgent));
 
-  router.get('/oauth/callback', asyncHandler(controllers.oauth.callback));
   router.get('/observability', asyncHandler(controllers.observability.getDashboard));
   router.post('/webhooks/highlevel', asyncHandler(controllers.webhooks.highLevelEvent));
   router.post('/webhooks/voice-ai-call-end', asyncHandler(controllers.webhooks.voiceAiCallEnd));

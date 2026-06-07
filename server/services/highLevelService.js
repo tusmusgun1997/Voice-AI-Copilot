@@ -1,18 +1,21 @@
 import { fetchVoiceAiAgent, fetchVoiceAiAgents, fetchVoiceAiCallLogs, patchVoiceAiAgent } from '../highlevelClient.js';
+import { getGhlAccessToken } from '../utils/ghlAuth.js';
 import { boundedNumber, cleanString } from '../utils/http.js';
 
 export function createHighLevelService(config = {}) {
-  function hasConfig() {
-    return Boolean(config.token && config.locationId);
+  function hasConfig(locationId) {
+    return Boolean(locationId || (config.token && config.locationId));
   }
 
-  async function loadCallLogs(query = {}) {
+  async function loadCallLogs(query = {}, locationId) {
     const page = boundedNumber(query.page, 1, 1, 500);
     const pageSize = boundedNumber(query.pageSize, 50, 1, 100);
+    const effectiveLocationId = locationId || config.locationId;
+    const token = await getGhlAccessToken(effectiveLocationId, config.oauth || config);
 
     return fetchVoiceAiCallLogs({
-      token: config.token,
-      locationId: config.locationId,
+      token: token || config.token,
+      locationId: effectiveLocationId,
       version: config.version,
       baseUrl: config.baseUrl,
       page,
@@ -28,10 +31,13 @@ export function createHighLevelService(config = {}) {
     });
   }
 
-  async function loadAgents() {
+  async function loadAgents(locationId) {
+    const effectiveLocationId = locationId || config.locationId;
+    const token = await getGhlAccessToken(effectiveLocationId, config.oauth || config);
+
     return fetchVoiceAiAgents({
-      token: config.token,
-      locationId: config.locationId,
+      token: token || config.token,
+      locationId: effectiveLocationId,
       version: config.version,
       baseUrl: config.baseUrl,
       page: 1,
@@ -39,10 +45,13 @@ export function createHighLevelService(config = {}) {
     });
   }
 
-  async function getAgent(agentId) {
+  async function getAgent(agentId, locationId) {
+    const effectiveLocationId = locationId || config.locationId;
+    const token = await getGhlAccessToken(effectiveLocationId, config.oauth || config);
+
     const result = await fetchVoiceAiAgent({
-      token: config.token,
-      locationId: config.locationId,
+      token: token || config.token,
+      locationId: effectiveLocationId,
       agentId,
       version: config.version,
       baseUrl: config.baseUrl
@@ -51,10 +60,13 @@ export function createHighLevelService(config = {}) {
     return result.agent;
   }
 
-  async function updateAgent(agentId, patch) {
+  async function updateAgent(agentId, patch, locationId) {
+    const effectiveLocationId = locationId || config.locationId;
+    const token = await getGhlAccessToken(effectiveLocationId, config.oauth || config);
+
     const result = await patchVoiceAiAgent({
-      token: config.token,
-      locationId: config.locationId,
+      token: token || config.token,
+      locationId: effectiveLocationId,
       agentId,
       version: config.version,
       baseUrl: config.baseUrl,

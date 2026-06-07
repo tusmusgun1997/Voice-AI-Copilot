@@ -37,6 +37,7 @@ export function createWebhookController({ analysisQueue, localDataFile, location
       return;
     }
 
+    const locationId = cleanString(request.body?.locationId || request.body?.data?.locationId);
     const result = await cleanupAgentData(agentId, { localDataFile, locationId });
 
     response.status(202).json({

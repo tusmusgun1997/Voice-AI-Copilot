@@ -1,5 +1,5 @@
 <script setup>
-import { RefreshCw } from '@lucide/vue';
+import { LogOut, RefreshCw } from '@lucide/vue';
 import { computed } from 'vue';
 
 const props = defineProps({
@@ -21,7 +21,7 @@ const props = defineProps({
   }
 });
 
-defineEmits(['refresh']);
+defineEmits(['refresh', 'sign-out']);
 
 const descriptions = {
   Overview: 'Track the full loop from call transcripts to issues, actions, and agent improvements.',
@@ -54,6 +54,9 @@ const subtitle = computed(() => descriptions[props.activeViewTitle] ?? 'Monitor 
       </span>
       <button class="icon-button" type="button" title="Refresh dashboard" @click="$emit('refresh')">
         <RefreshCw :size="18" :class="{ spinning: loading }" />
+      </button>
+      <button class="icon-button" type="button" title="Sign out" @click="$emit('sign-out')">
+        <LogOut :size="18" />
       </button>
       <span class="user-chip" title="Current user">TY</span>
     </div>

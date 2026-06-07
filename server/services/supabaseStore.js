@@ -6,9 +6,43 @@ export function isSupabaseStoreEnabled() {
   return String(process.env.DATA_STORE || '').toLowerCase() === SUPABASE_STORE;
 }
 
-export async function readSupabaseCollection(key) {
+export async function upsertSupabaseInstallation(details = {}) {
+  if (!isSupabaseStoreEnabled() || !details.ghl_location_id) return null;
+
   const client = createSupabaseRestClient();
-  const installation = await getInstallation(client);
+  const rows = await client.upsert('app_installations', {
+    ghl_company_id: cleanString(details.ghl_company_id),
+    ghl_location_id: cleanString(details.ghl_location_id),
+    ghl_user_type: cleanString(details.ghl_user_type) || 'Location',
+    access_token: cleanString(details.access_token),
+    refresh_token: cleanString(details.refresh_token),
+    expires_at: details.expires_at || null,
+    display_name: cleanString(details.display_name),
+    is_sandbox: Boolean(details.is_sandbox),
+    updated_at: new Date().toISOString()
+  }, 'ghl_location_id');
+
+  if (rows[0]) {
+    installationCache = rows[0];
+  }
+  return rows[0] ?? null;
+}
+
+export async function getSupabaseInstallationByLocation(locationId) {
+  if (!isSupabaseStoreEnabled() || !locationId) return null;
+
+  const client = createSupabaseRestClient();
+  const rows = await client.select('app_installations', {
+    ghl_location_id: `eq.${cleanString(locationId)}`,
+    limit: '1'
+  });
+
+  return rows[0] ?? null;
+}
+
+export async function readSupabaseCollection(key, locationId) {
+  const client = createSupabaseRestClient();
+  const installation = await getInstallation(client, locationId);
 
   if (key === 'versions') return readVersions(client, installation.id);
   if (key === 'profiles') return readProfiles(client, installation.id);
@@ -17,9 +51,9 @@ export async function readSupabaseCollection(key) {
   return [];
 }
 
-export async function writeSupabaseCollection(key, items) {
+export async function writeSupabaseCollection(key, items, locationId) {
   const client = createSupabaseRestClient();
-  const installation = await getInstallation(client);
+  const installation = await getInstallation(client, locationId);
   const safeItems = Array.isArray(items) ? items : [];
 
   if (key === 'versions') return writeVersions(client, installation.id, safeItems);
@@ -33,7 +67,7 @@ export async function insertSupabaseWebhookEvent(event = {}) {
   if (!isSupabaseStoreEnabled()) return null;
 
   const client = createSupabaseRestClient();
-  const installation = await getInstallation(client);
+  const installation = await getInstallation(client, event.locationId);
   const created = await client.insert('webhook_events', {
     id: event.id || `event-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     installation_id: installation.id,
@@ -47,11 +81,11 @@ export async function insertSupabaseWebhookEvent(event = {}) {
   return created[0] ?? null;
 }
 
-export async function listSupabaseAnalysisJobs() {
+export async function listSupabaseAnalysisJobs(locationId) {
   if (!isSupabaseStoreEnabled()) return [];
 
   const client = createSupabaseRestClient();
-  const installation = await getInstallation(client);
+  const installation = await getInstallation(client, locationId);
   const rows = await client.select('call_analysis_jobs', {
     installation_id: `eq.${installation.id}`,
     order: 'queued_at.desc'
@@ -64,7 +98,7 @@ export async function upsertSupabaseAnalysisJob(job = {}) {
   if (!isSupabaseStoreEnabled() || !job.id) return null;
 
   const client = createSupabaseRestClient();
-  const installation = await getInstallation(client);
+  const installation = await getInstallation(client, job.locationId);
   const rows = await client.upsert('call_analysis_jobs', {
     id: job.id,
     installation_id: installation.id,
@@ -271,13 +305,13 @@ export async function cleanupSupabaseAgentData({ agentId, locationId, client: ex
   };
 }
 
-async function getInstallation(client) {
-  const locationId = cleanString(process.env.SUPABASE_GHL_LOCATION_ID || process.env.GHL_LOCATION_ID || DEFAULT_LOCATION_ID);
+async function getInstallation(client, locationId) {
+  const effectiveLocationId = cleanString(locationId || process.env.SUPABASE_GHL_LOCATION_ID || process.env.GHL_LOCATION_ID || DEFAULT_LOCATION_ID);
 
-  if (installationCache?.ghl_location_id === locationId) return installationCache;
+  if (installationCache?.ghl_location_id === effectiveLocationId) return installationCache;
 
   const existing = await client.select('app_installations', {
-    ghl_location_id: `eq.${locationId}`,
+    ghl_location_id: `eq.${effectiveLocationId}`,
     limit: '1'
   });
 
@@ -288,7 +322,7 @@ async function getInstallation(client) {
 
   const created = await client.insert('app_installations', {
     ghl_company_id: cleanString(process.env.GHL_COMPANY_ID),
-    ghl_location_id: locationId,
+    ghl_location_id: effectiveLocationId,
     ghl_user_type: cleanString(process.env.GHL_OAUTH_USER_TYPE) || 'Location',
     display_name: cleanString(process.env.SUPABASE_INSTALLATION_NAME || process.env.GHL_LOCATION_NAME),
     is_sandbox: String(process.env.SUPABASE_IS_SANDBOX || 'true') === 'true'

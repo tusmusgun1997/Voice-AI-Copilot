@@ -16,8 +16,8 @@ export async function cleanupDeletedAgentData({ activeAgentIds = [], localDataFi
   }
 
   const [{ profiles }, analyses] = await Promise.all([
-    listSavedObservabilityProfiles(localDataFile),
-    listCallAnalyses(localDataFile)
+    listSavedObservabilityProfiles(localDataFile, locationId),
+    listCallAnalyses(localDataFile, locationId)
   ]);
 
   const profileAgentIds = profiles.flatMap((profile) => profile.agentIds ?? []);
@@ -34,8 +34,8 @@ export async function cleanupDeletedAgentData({ activeAgentIds = [], localDataFi
   const nextAnalyses = analyses.filter((analysis) => !deletedSet.has(analysis.agentId));
 
   await Promise.all([
-    writeCollection(localDataFile, 'profiles', nextProfiles),
-    writeCollection(localDataFile, 'analyses', nextAnalyses)
+    writeCollection(localDataFile, 'profiles', nextProfiles, locationId),
+    writeCollection(localDataFile, 'analyses', nextAnalyses, locationId)
   ]);
 
   return {
@@ -52,16 +52,16 @@ export async function cleanupAgentData(agentId, { localDataFile, locationId } = 
   }
 
   const [{ profiles }, analyses] = await Promise.all([
-    listSavedObservabilityProfiles(localDataFile),
-    listCallAnalyses(localDataFile)
+    listSavedObservabilityProfiles(localDataFile, locationId),
+    listCallAnalyses(localDataFile, locationId)
   ]);
 
   const nextProfiles = profiles.filter((profile) => !(profile.agentIds ?? []).includes(agentId));
   const nextAnalyses = analyses.filter((analysis) => analysis.agentId !== agentId);
 
   await Promise.all([
-    writeCollection(localDataFile, 'profiles', nextProfiles),
-    writeCollection(localDataFile, 'analyses', nextAnalyses)
+    writeCollection(localDataFile, 'profiles', nextProfiles, locationId),
+    writeCollection(localDataFile, 'analyses', nextAnalyses, locationId)
   ]);
 
   return {

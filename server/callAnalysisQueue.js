@@ -68,12 +68,14 @@ export function createCallAnalysisQueue(config = {}) {
     return job;
   }
 
-  async function listJobs() {
+  async function listJobs(locationId) {
     if (isSupabaseStoreEnabled()) {
-      return listSupabaseAnalysisJobs();
+      return listSupabaseAnalysisJobs(locationId);
     }
 
-    return Array.from(jobStatus.values()).sort((a, b) => new Date(b.queuedAt) - new Date(a.queuedAt));
+    return Array.from(jobStatus.values())
+      .filter((job) => !locationId || job.locationId === locationId)
+      .sort((a, b) => new Date(b.queuedAt) - new Date(a.queuedAt));
   }
 
   async function processNext() {
@@ -246,9 +248,12 @@ export function createCallAnalysisQueue(config = {}) {
   };
 }
 
+import { getGhlAccessToken } from './utils/ghlAuth.js';
+
 async function fetchCallForJob(job, config) {
+  const token = await getGhlAccessToken(job.locationId || config.locationId, config.oauth || config);
   const firstPass = await fetchVoiceAiCallLogs({
-    token: config.highLevelToken,
+    token: token || config.highLevelToken,
     locationId: job.locationId || config.locationId,
     version: config.highLevelVersion,
     baseUrl: config.highLevelBaseUrl,
@@ -264,7 +269,7 @@ async function fetchCallForJob(job, config) {
 
   if (!call && job.agentId) {
     const fallback = await fetchVoiceAiCallLogs({
-      token: config.highLevelToken,
+      token: token || config.highLevelToken,
       locationId: job.locationId || config.locationId,
       version: config.highLevelVersion,
       baseUrl: config.highLevelBaseUrl,
@@ -287,9 +292,11 @@ async function fetchCallForJob(job, config) {
 async function fetchAgentForCall(call, config) {
   if (!call.agentId) return null;
 
+  const token = await getGhlAccessToken(call.locationId || config.locationId, config.oauth || config);
+
   try {
     const result = await fetchVoiceAiAgent({
-      token: config.highLevelToken,
+      token: token || config.highLevelToken,
       locationId: call.locationId || config.locationId,
       agentId: call.agentId,
       version: config.highLevelVersion,
@@ -303,7 +310,7 @@ async function fetchAgentForCall(call, config) {
 
   try {
     const result = await fetchVoiceAiAgents({
-      token: config.highLevelToken,
+      token: token || config.highLevelToken,
       locationId: call.locationId || config.locationId,
       version: config.highLevelVersion,
       baseUrl: config.highLevelBaseUrl,
