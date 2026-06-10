@@ -19,6 +19,7 @@ import DashboardControls from './components/DashboardControls.vue';
 import DashboardTopbar from './components/DashboardTopbar.vue';
 import LlmParametersPage from './components/LlmParametersPage.vue';
 import OverviewPage from './components/OverviewPage.vue';
+import { apiFetch, captureInstallationContextFromUrl } from './apiClient.js';
 
 const loading = ref(true);
 const error = ref('');
@@ -241,6 +242,7 @@ const selectedCallDetails = computed(() =>
 const selectedCallAnalysis = computed(() => (selectedCallPanel.value ? getCallAnalysis(selectedCallPanel.value) : null));
 
 onMounted(() => {
+  captureInstallationContextFromUrl();
   syncRouteFromLocation();
   window.addEventListener('popstate', syncRouteFromLocation);
   window.addEventListener('hashchange', syncRouteFromLocation);
@@ -269,7 +271,7 @@ async function loadDashboard(options = {}) {
   }
 
   try {
-    const response = await fetch('/api/observability');
+    const response = await apiFetch('/api/observability');
     const body = await response.json();
 
     if (!response.ok) {
@@ -295,7 +297,7 @@ async function loadDashboard(options = {}) {
 
 async function loadSavedObservabilityProfiles(options = {}) {
   try {
-    const response = await fetch('/api/agent-observability-profiles');
+    const response = await apiFetch('/api/agent-observability-profiles');
     const body = await response.json();
 
     if (!response.ok) {
@@ -318,7 +320,7 @@ async function loadSavedObservabilityProfiles(options = {}) {
 
 async function loadParameterVersions() {
   try {
-    const response = await fetch('/api/llm-parameter-versions');
+    const response = await apiFetch('/api/llm-parameter-versions');
     const body = await response.json();
 
     if (!response.ok) {
@@ -532,7 +534,7 @@ async function saveAgent(agent) {
   agentEditMessage.value = '';
 
   try {
-    const response = await fetch(`/api/agents/${agent.id}`, {
+    const response = await apiFetch(`/api/agents/${agent.id}`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json'
@@ -570,7 +572,7 @@ async function loadAgentObservabilityProfile(agentId, options = {}) {
   }
 
   try {
-    const response = await fetch(`/api/agent-observability-profiles/${agentId}?${params}`);
+    const response = await apiFetch(`/api/agent-observability-profiles/${agentId}?${params}`);
     const body = await response.json();
 
     if (!response.ok) {
@@ -679,7 +681,7 @@ async function saveObservabilityProfile(agent) {
   profileEditMessage.value = '';
 
   try {
-    const response = await fetch(`/api/agent-observability-profiles/${agent.id}`, {
+    const response = await apiFetch(`/api/agent-observability-profiles/${agent.id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json'
@@ -736,7 +738,7 @@ async function applyParameterVersionToAgent(payload = {}) {
   };
 
   try {
-    const response = await fetch(`/api/agent-observability-profiles/${agent.id}`, {
+    const response = await apiFetch(`/api/agent-observability-profiles/${agent.id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json'
@@ -787,7 +789,7 @@ async function analyzeCall(call) {
   error.value = '';
 
   try {
-    const response = await fetch(`/api/call-analyses/${call.id}/analyze`, {
+    const response = await apiFetch(`/api/call-analyses/${call.id}/analyze`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -819,7 +821,7 @@ async function updateHumanActionStatus(action, status) {
   error.value = '';
 
   try {
-    const response = await fetch(`/api/human-actions/${encodeURIComponent(action.id)}`, {
+    const response = await apiFetch(`/api/human-actions/${encodeURIComponent(action.id)}`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json'
@@ -844,7 +846,7 @@ async function deleteHumanAction(action) {
   error.value = '';
 
   try {
-    const response = await fetch(`/api/human-actions/${encodeURIComponent(action.id)}`, {
+    const response = await apiFetch(`/api/human-actions/${encodeURIComponent(action.id)}`, {
       method: 'DELETE'
     });
     const body = await response.json().catch(() => ({}));

@@ -1,6 +1,7 @@
 <script setup>
 import { Check, CopyPlus, Plus, Save, Trash2, X } from '@lucide/vue';
 import { computed, onMounted, ref, watch } from 'vue';
+import { apiFetch } from '../apiClient.js';
 
 const props = defineProps({
   focusVersionId: {
@@ -53,7 +54,7 @@ async function loadVersions() {
   error.value = '';
 
   try {
-    const response = await fetch('/api/llm-parameter-versions');
+    const response = await apiFetch('/api/llm-parameter-versions');
     const body = await response.json();
 
     if (!response.ok) {
@@ -113,7 +114,7 @@ async function createVersion() {
     const name = form.name || source?.name || 'Custom LLM parameters';
     const versionLabel = form.versionLabel || '';
     const description = form.description || source?.description || '';
-    const response = await fetch('/api/llm-parameter-versions', {
+    const response = await apiFetch('/api/llm-parameter-versions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -207,7 +208,7 @@ async function saveVersion() {
   message.value = '';
 
   try {
-    const response = await fetch(`/api/llm-parameter-versions/${draft.id}`, {
+    const response = await apiFetch(`/api/llm-parameter-versions/${draft.id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json'

@@ -284,6 +284,10 @@ function nextVersionLabel(versions, name) {
 
 function uniqueVersionId(name, versionLabel, versions) {
   const base = slug(`${name}-${versionLabel}`) || `llm-parameter-version-${Date.now()}`;
+  if (String(process.env.DATA_STORE || '').toLowerCase() === 'supabase') {
+    return `${base}-${Date.now().toString(36)}`;
+  }
+
   const ids = new Set([
     defaultParameterVersion.id,
     ...defaultParameterTemplates.map((template) => template.id),

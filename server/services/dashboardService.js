@@ -4,6 +4,7 @@ import { buildObservabilityDashboard } from '../observability.js';
 import { loadObservabilityProfiles } from '../observabilityProfiles.js';
 import { cleanupDeletedAgentData } from './agentCleanupService.js';
 import { getAgentId, getCallAgentId } from './highLevelService.js';
+import { getRequestContext } from './requestContext.js';
 
 export function createDashboardService({
   highLevelService,
@@ -13,6 +14,8 @@ export function createDashboardService({
   showDeletedAgentCalls = false
 } = {}) {
   async function getDashboard(query = {}) {
+    const requestContext = getRequestContext();
+    const currentLocationId = requestContext.locationId || locationId;
     const mode = String(query.mode || 'auto');
     let liveResult = null;
     let agentsResult = null;
@@ -43,7 +46,7 @@ export function createDashboardService({
       await cleanupDeletedAgentData({
         activeAgentIds: Array.from(activeAgentIds),
         localDataFile,
-        locationId,
+        locationId: currentLocationId,
         allowEmptyActiveSet: true
       });
     }
@@ -58,12 +61,18 @@ export function createDashboardService({
       includeCallOnlyAgents: !hasAuthoritativeAgentDirectory
     });
     const storedAnalyses = await listCallAnalyses(localDataFile);
-    const enrichedDashboard = applyStoredAnalyses(dashboard, storedAnalyses, locationId);
+    const enrichedDashboard = applyStoredAnalyses(dashboard, storedAnalyses, currentLocationId);
 
     return {
       dataSource: shouldUseDemo ? 'demo' : liveLogs.length > 0 ? 'highlevel' : 'empty',
       generatedAt: new Date().toISOString(),
-      locationId: locationId || null,
+      locationId: currentLocationId || null,
+      installation: {
+        installationId: requestContext.installationId || '',
+        locationId: currentLocationId || '',
+        companyId: requestContext.companyId || '',
+        userType: requestContext.userType || 'Location'
+      },
       liveRecordCount: liveResult?.totalRecords ?? liveLogs.length,
       visibleRecordCount: callLogs.length,
       liveAgentCount: agentsResult?.totalRecords ?? agentsResult?.agents?.length ?? null,

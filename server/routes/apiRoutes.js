@@ -5,6 +5,7 @@ export function createApiRouter(controllers) {
   const router = Router();
 
   router.get('/health', controllers.health.getHealth);
+  router.get('/installation/status', asyncHandler(controllers.installation.getStatus));
   router.get('/call-logs', asyncHandler(controllers.calls.listCallLogs));
   router.get('/call-analyses', asyncHandler(controllers.calls.listAnalyses));
   router.get('/call-analyses/:callId', asyncHandler(controllers.calls.getAnalysis));
@@ -27,6 +28,7 @@ export function createApiRouter(controllers) {
   router.get('/oauth/callback', asyncHandler(controllers.oauth.callback));
   router.get('/observability', asyncHandler(controllers.observability.getDashboard));
   router.post('/webhooks/highlevel', asyncHandler(controllers.webhooks.highLevelEvent));
+  router.post('/webhooks/app-install', asyncHandler(controllers.webhooks.appInstall));
   router.post('/webhooks/voice-ai-call-end', asyncHandler(controllers.webhooks.voiceAiCallEnd));
   router.post('/webhooks/voice-ai-agent-delete', asyncHandler(controllers.webhooks.voiceAiAgentDelete));
 

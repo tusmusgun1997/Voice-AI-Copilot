@@ -3,11 +3,13 @@ import { fetchVoiceAiAgent, fetchVoiceAiAgents, fetchVoiceAiCallLogs } from './h
 import { analyzeCallWithOpenAI } from './llmCallAnalyzer.js';
 import { getAgentObservabilityProfile } from './observabilityProfiles.js';
 import {
+  getSupabaseHighLevelAuthContext,
   insertSupabaseWebhookEvent,
   isSupabaseStoreEnabled,
   listSupabaseAnalysisJobs,
   upsertSupabaseAnalysisJob
 } from './services/supabaseStore.js';
+import { runWithRequestContext } from './services/requestContext.js';
 
 const DEFAULT_MAX_ATTEMPTS = 5;
 const DEFAULT_RETRY_DELAY_MS = 12000;
@@ -82,7 +84,13 @@ export function createCallAnalysisQueue(config = {}) {
 
     while (jobs.length > 0) {
       const job = jobs.shift();
-      await processJob(job);
+      await runWithRequestContext(
+        {
+          locationId: job.locationId,
+          userType: 'Location'
+        },
+        () => processJob(job)
+      );
     }
 
     processing = false;
@@ -247,9 +255,10 @@ export function createCallAnalysisQueue(config = {}) {
 }
 
 async function fetchCallForJob(job, config) {
+  const auth = await resolveJobAuth(job, config);
   const firstPass = await fetchVoiceAiCallLogs({
-    token: config.highLevelToken,
-    locationId: job.locationId || config.locationId,
+    token: auth.token,
+    locationId: auth.locationId,
     version: config.highLevelVersion,
     baseUrl: config.highLevelBaseUrl,
     page: 1,
@@ -264,8 +273,8 @@ async function fetchCallForJob(job, config) {
 
   if (!call && job.agentId) {
     const fallback = await fetchVoiceAiCallLogs({
-      token: config.highLevelToken,
-      locationId: job.locationId || config.locationId,
+      token: auth.token,
+      locationId: auth.locationId,
       version: config.highLevelVersion,
       baseUrl: config.highLevelBaseUrl,
       page: 1,
@@ -286,11 +295,17 @@ async function fetchCallForJob(job, config) {
 
 async function fetchAgentForCall(call, config) {
   if (!call.agentId) return null;
+  const auth = await resolveJobAuth(
+    {
+      locationId: call.locationId || config.locationId
+    },
+    config
+  );
 
   try {
     const result = await fetchVoiceAiAgent({
-      token: config.highLevelToken,
-      locationId: call.locationId || config.locationId,
+      token: auth.token,
+      locationId: auth.locationId,
       agentId: call.agentId,
       version: config.highLevelVersion,
       baseUrl: config.highLevelBaseUrl
@@ -303,8 +318,8 @@ async function fetchAgentForCall(call, config) {
 
   try {
     const result = await fetchVoiceAiAgents({
-      token: config.highLevelToken,
-      locationId: call.locationId || config.locationId,
+      token: auth.token,
+      locationId: auth.locationId,
       version: config.highLevelVersion,
       baseUrl: config.highLevelBaseUrl,
       page: 1,
@@ -316,6 +331,25 @@ async function fetchAgentForCall(call, config) {
   } catch {
     return { id: call.agentId, name: call.agentName };
   }
+}
+
+async function resolveJobAuth(job, config) {
+  const supabaseAuth = isSupabaseStoreEnabled()
+    ? await getSupabaseHighLevelAuthContext({ locationId: job.locationId || config.locationId })
+    : null;
+  const token = supabaseAuth?.token || config.highLevelToken;
+  const locationId = supabaseAuth?.locationId || job.locationId || config.locationId;
+
+  if (!token || !locationId) {
+    const error = new Error('HighLevel auth is missing for this installation.');
+    error.status = 401;
+    throw error;
+  }
+
+  return {
+    token,
+    locationId
+  };
 }
 
 function findCall(callLogs, callId) {

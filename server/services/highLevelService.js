@@ -1,18 +1,20 @@
 import { fetchVoiceAiAgent, fetchVoiceAiAgents, fetchVoiceAiCallLogs, patchVoiceAiAgent } from '../highlevelClient.js';
+import { getSupabaseHighLevelAuthContext, isSupabaseStoreEnabled } from './supabaseStore.js';
 import { boundedNumber, cleanString } from '../utils/http.js';
 
 export function createHighLevelService(config = {}) {
   function hasConfig() {
-    return Boolean(config.token && config.locationId);
+    return isSupabaseStoreEnabled() || Boolean(config.token && config.locationId);
   }
 
   async function loadCallLogs(query = {}) {
     const page = boundedNumber(query.page, 1, 1, 500);
     const pageSize = boundedNumber(query.pageSize, 50, 1, 100);
+    const auth = await resolveAuthContext(query);
 
     return fetchVoiceAiCallLogs({
-      token: config.token,
-      locationId: config.locationId,
+      token: auth.token,
+      locationId: auth.locationId,
       version: config.version,
       baseUrl: config.baseUrl,
       page,
@@ -29,9 +31,11 @@ export function createHighLevelService(config = {}) {
   }
 
   async function loadAgents() {
+    const auth = await resolveAuthContext();
+
     return fetchVoiceAiAgents({
-      token: config.token,
-      locationId: config.locationId,
+      token: auth.token,
+      locationId: auth.locationId,
       version: config.version,
       baseUrl: config.baseUrl,
       page: 1,
@@ -40,9 +44,10 @@ export function createHighLevelService(config = {}) {
   }
 
   async function getAgent(agentId) {
+    const auth = await resolveAuthContext();
     const result = await fetchVoiceAiAgent({
-      token: config.token,
-      locationId: config.locationId,
+      token: auth.token,
+      locationId: auth.locationId,
       agentId,
       version: config.version,
       baseUrl: config.baseUrl
@@ -52,9 +57,10 @@ export function createHighLevelService(config = {}) {
   }
 
   async function updateAgent(agentId, patch) {
+    const auth = await resolveAuthContext();
     const result = await patchVoiceAiAgent({
-      token: config.token,
-      locationId: config.locationId,
+      token: auth.token,
+      locationId: auth.locationId,
       agentId,
       version: config.version,
       baseUrl: config.baseUrl,
@@ -71,6 +77,25 @@ export function createHighLevelService(config = {}) {
     getAgent,
     updateAgent
   };
+
+  async function resolveAuthContext(query = {}) {
+    const supabaseAuth = isSupabaseStoreEnabled()
+      ? await getSupabaseHighLevelAuthContext({ locationId: query.locationId })
+      : null;
+    const token = supabaseAuth?.token || config.token;
+    const locationId = supabaseAuth?.locationId || cleanString(query.locationId) || config.locationId;
+
+    if (!token || !locationId) {
+      const error = new Error('HighLevel auth is missing for this installation. Reinstall or reconnect the app.');
+      error.status = 401;
+      throw error;
+    }
+
+    return {
+      token,
+      locationId
+    };
+  }
 }
 
 export function sanitizeAgentPatch(body = {}) {

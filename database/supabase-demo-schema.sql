@@ -7,9 +7,26 @@ create table if not exists app_installations (
   ghl_user_type text default 'Location',
   display_name text,
   is_sandbox boolean default true,
+  connection_status text default 'connected'
+    check (connection_status in ('connected', 'needs_reconnect', 'disabled')),
+  connection_error text default '',
   installed_at timestamptz default now(),
   updated_at timestamptz default now(),
+  uninstalled_at timestamptz,
   unique (ghl_location_id)
+);
+
+create table if not exists oauth_tokens (
+  installation_id uuid primary key references app_installations(id) on delete cascade,
+  access_token_encrypted text not null,
+  refresh_token_encrypted text default '',
+  expires_at timestamptz,
+  scopes text[] default '{}',
+  token_type text default 'Bearer',
+  last_refreshed_at timestamptz,
+  refresh_error text default '',
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
 );
 
 create table if not exists llm_parameter_versions (
@@ -28,6 +45,7 @@ create table if not exists llm_parameter_versions (
 
 create table if not exists llm_parameters (
   id text primary key,
+  installation_id uuid references app_installations(id) on delete cascade,
   version_id text not null references llm_parameter_versions(id) on delete cascade,
   parameter_key text not null,
   title text not null,
@@ -62,7 +80,10 @@ create table if not exists agent_observability_profiles (
 create table if not exists webhook_events (
   id text primary key default gen_random_uuid()::text,
   installation_id uuid references app_installations(id) on delete cascade,
+  provider text default 'highlevel',
   event_type text not null,
+  external_event_id text,
+  ghl_company_id text,
   ghl_location_id text,
   ghl_agent_id text,
   ghl_call_id text,
@@ -118,6 +139,7 @@ create table if not exists call_analyses (
 
 create table if not exists call_parameter_results (
   id text primary key,
+  installation_id uuid references app_installations(id) on delete cascade,
   analysis_id text not null references call_analyses(id) on delete cascade,
   parameter_key text not null,
   title text not null,
@@ -184,6 +206,16 @@ alter table human_actions add column if not exists action_category text default 
 alter table human_actions add column if not exists suggestion text default '';
 alter table human_actions add column if not exists target_type text default 'human_follow_up';
 alter table human_actions add column if not exists target_id text default '';
+alter table app_installations add column if not exists connection_status text default 'connected';
+alter table app_installations add column if not exists connection_error text default '';
+alter table app_installations add column if not exists uninstalled_at timestamptz;
+alter table llm_parameters add column if not exists installation_id uuid references app_installations(id) on delete cascade;
+alter table webhook_events add column if not exists provider text default 'highlevel';
+alter table webhook_events add column if not exists external_event_id text;
+alter table webhook_events add column if not exists ghl_company_id text;
+alter table webhook_events add column if not exists processed_at timestamptz;
+alter table webhook_events add column if not exists processing_error text;
+alter table call_parameter_results add column if not exists installation_id uuid references app_installations(id) on delete cascade;
 
 update human_actions
 set
@@ -198,12 +230,14 @@ where title = '' or suggestion = '' or action_category is null or action_categor
 delete from call_recommendations;
 
 create index if not exists idx_installations_location on app_installations (ghl_location_id);
+create index if not exists idx_oauth_tokens_installation on oauth_tokens (installation_id);
 create index if not exists idx_agent_profiles_agent on agent_observability_profiles (installation_id, ghl_agent_id);
-create index if not exists idx_parameters_version on llm_parameters (version_id, sort_order);
+create index if not exists idx_parameters_version on llm_parameters (installation_id, version_id, sort_order);
 create index if not exists idx_jobs_status on call_analysis_jobs (status, next_retry_at);
 create index if not exists idx_analyses_agent on call_analyses (installation_id, ghl_agent_id, analyzed_at desc);
 create index if not exists idx_analyses_call on call_analyses (installation_id, ghl_call_id);
-create index if not exists idx_parameter_results_analysis on call_parameter_results (analysis_id);
+create index if not exists idx_webhook_install_events on webhook_events (provider, external_event_id);
+create index if not exists idx_parameter_results_analysis on call_parameter_results (installation_id, analysis_id);
 create index if not exists idx_recommendations_agent on call_recommendations (installation_id, ghl_agent_id, review_status);
 create index if not exists idx_actions_status on human_actions (installation_id, status, severity);
 create index if not exists idx_actions_category on human_actions (installation_id, action_category, status);

@@ -8,6 +8,7 @@ import { createServerConfig } from './config/serverConfig.js';
 import { createAgentController } from './controllers/agentController.js';
 import { createCallController } from './controllers/callController.js';
 import { createHealthController } from './controllers/healthController.js';
+import { createInstallationController } from './controllers/installationController.js';
 import { createOAuthController } from './controllers/oauthController.js';
 import { createObservabilityController } from './controllers/observabilityController.js';
 import { createObservabilityProfileController } from './controllers/observabilityProfileController.js';
@@ -17,6 +18,7 @@ import { createCallAnalysisQueue } from './callAnalysisQueue.js';
 import { createApiRouter } from './routes/apiRoutes.js';
 import { createDashboardService } from './services/dashboardService.js';
 import { createHighLevelService } from './services/highLevelService.js';
+import { createRequestContextMiddleware } from './services/requestContext.js';
 import { createErrorHandler } from './utils/http.js';
 
 dotenv.config();
@@ -50,6 +52,7 @@ const dashboardService = createDashboardService({
 
 const controllers = {
   health: createHealthController(),
+  installation: createInstallationController(),
   calls: createCallController({
     analysisQueue,
     highLevelService,
@@ -72,7 +75,14 @@ const controllers = {
 
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
-app.use('/api', createApiRouter(controllers));
+app.use(
+  '/api',
+  createRequestContextMiddleware({
+    locationId: config.highLevel.locationId,
+    userType: config.oauth.userType
+  }),
+  createApiRouter(controllers)
+);
 
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));

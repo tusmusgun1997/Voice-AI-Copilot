@@ -1,6 +1,9 @@
+import { getRequestContext } from './requestContext.js';
+import { decodeSecret, encodeSecret } from '../utils/tokenCrypto.js';
+
 const SUPABASE_STORE = 'supabase';
 const DEFAULT_LOCATION_ID = 'local-demo-location';
-let installationCache = null;
+const installationCache = new Map();
 
 export function isSupabaseStoreEnabled() {
   return String(process.env.DATA_STORE || '').toLowerCase() === SUPABASE_STORE;
@@ -33,11 +36,20 @@ export async function insertSupabaseWebhookEvent(event = {}) {
   if (!isSupabaseStoreEnabled()) return null;
 
   const client = createSupabaseRestClient();
-  const installation = await getInstallation(client);
+  const installation = await getInstallation(client, {
+    context: {
+      locationId: event.locationId,
+      companyId: event.companyId,
+      userType: event.userType
+    }
+  });
   const created = await client.insert('webhook_events', {
     id: event.id || `event-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     installation_id: installation.id,
+    provider: cleanString(event.provider || 'highlevel'),
     event_type: cleanString(event.eventType || event.type || 'VoiceAiCallEnd'),
+    external_event_id: cleanString(event.externalEventId || event.eventId),
+    ghl_company_id: cleanString(event.companyId || installation.ghl_company_id),
     ghl_location_id: cleanString(event.locationId),
     ghl_agent_id: cleanString(event.agentId),
     ghl_call_id: cleanString(event.callId),
@@ -64,7 +76,11 @@ export async function upsertSupabaseAnalysisJob(job = {}) {
   if (!isSupabaseStoreEnabled() || !job.id) return null;
 
   const client = createSupabaseRestClient();
-  const installation = await getInstallation(client);
+  const installation = await getInstallation(client, {
+    context: {
+      locationId: job.locationId
+    }
+  });
   const rows = await client.upsert('call_analysis_jobs', {
     id: job.id,
     installation_id: installation.id,
@@ -176,10 +192,12 @@ export async function updateSupabaseHumanAction(actionId, patch = {}) {
   if (!isSupabaseStoreEnabled() || !actionId) return null;
 
   const client = createSupabaseRestClient();
+  const installation = await getInstallation(client);
   const rows = await client.update(
     'human_actions',
     {
-      id: `eq.${actionId}`
+      id: `eq.${actionId}`,
+      installation_id: `eq.${installation.id}`
     },
     {
       status: cleanString(patch.status) || 'open',
@@ -194,8 +212,10 @@ export async function deleteSupabaseHumanAction(actionId) {
   if (!isSupabaseStoreEnabled() || !actionId) return false;
 
   const client = createSupabaseRestClient();
+  const installation = await getInstallation(client);
   await client.delete('human_actions', {
-    id: `eq.${actionId}`
+    id: `eq.${actionId}`,
+    installation_id: `eq.${installation.id}`
   });
 
   return true;
@@ -271,31 +291,200 @@ export async function cleanupSupabaseAgentData({ agentId, locationId, client: ex
   };
 }
 
-async function getInstallation(client) {
-  const locationId = cleanString(process.env.SUPABASE_GHL_LOCATION_ID || process.env.GHL_LOCATION_ID || DEFAULT_LOCATION_ID);
+export async function upsertSupabaseInstallation(input = {}) {
+  if (!isSupabaseStoreEnabled()) return null;
 
-  if (installationCache?.ghl_location_id === locationId) return installationCache;
+  const client = createSupabaseRestClient();
+  return upsertInstallation(client, input);
+}
 
-  const existing = await client.select('app_installations', {
-    ghl_location_id: `eq.${locationId}`,
+export async function getSupabaseInstallationStatus(input = {}) {
+  if (!isSupabaseStoreEnabled()) {
+    return {
+      connected: false,
+      status: 'json_store',
+      message: 'Supabase store is not enabled.'
+    };
+  }
+
+  const client = createSupabaseRestClient();
+  const installation = await getInstallation(client, { context: input, createIfMissing: false });
+
+  if (!installation) {
+    return {
+      connected: false,
+      status: 'not_installed',
+      locationId: cleanString(input.locationId || getRequestContext().locationId || process.env.GHL_LOCATION_ID)
+    };
+  }
+
+  const tokenRows = await client.select('oauth_tokens', {
+    installation_id: `eq.${installation.id}`,
     limit: '1'
   });
 
-  if (existing[0]) {
-    installationCache = existing[0];
-    return installationCache;
+  return {
+    connected: installation.connection_status !== 'needs_reconnect',
+    status: installation.connection_status || 'connected',
+    installationId: installation.id,
+    locationId: installation.ghl_location_id,
+    companyId: installation.ghl_company_id,
+    displayName: installation.display_name,
+    hasOAuthToken: Boolean(tokenRows[0])
+  };
+}
+
+export async function saveSupabaseOAuthToken({ installationId, token = {} } = {}) {
+  if (!isSupabaseStoreEnabled() || !installationId) return null;
+
+  const client = createSupabaseRestClient();
+  const expiresAt = token.expires_at || token.expiresAt || calculateExpiresAt(token.expires_in || token.expiresIn);
+  const rows = await client.upsert('oauth_tokens', {
+    installation_id: installationId,
+    access_token_encrypted: encodeSecret(token.access_token || token.accessToken),
+    refresh_token_encrypted: encodeSecret(token.refresh_token || token.refreshToken),
+    expires_at: expiresAt || null,
+    scopes: parseScopes(token.scope || token.scopes),
+    token_type: token.token_type || token.tokenType || 'Bearer',
+    last_refreshed_at: new Date().toISOString(),
+    refresh_error: '',
+    updated_at: new Date().toISOString()
+  }, 'installation_id');
+
+  return rows[0] ?? null;
+}
+
+export async function getSupabaseHighLevelAuthContext(context = {}) {
+  if (!isSupabaseStoreEnabled()) return null;
+
+  const client = createSupabaseRestClient();
+  const installation = await getInstallation(client, { context, createIfMissing: false });
+  if (!installation) return null;
+
+  const rows = await client.select('oauth_tokens', {
+    installation_id: `eq.${installation.id}`,
+    limit: '1'
+  });
+  const token = rows[0];
+
+  if (!token?.access_token_encrypted) {
+    return {
+      installation,
+      token: '',
+      locationId: installation.ghl_location_id
+    };
   }
 
-  const created = await client.insert('app_installations', {
-    ghl_company_id: cleanString(process.env.GHL_COMPANY_ID),
-    ghl_location_id: locationId,
-    ghl_user_type: cleanString(process.env.GHL_OAUTH_USER_TYPE) || 'Location',
-    display_name: cleanString(process.env.SUPABASE_INSTALLATION_NAME || process.env.GHL_LOCATION_NAME),
-    is_sandbox: String(process.env.SUPABASE_IS_SANDBOX || 'true') === 'true'
-  });
+  return {
+    installation,
+    token: decodeSecret(token.access_token_encrypted),
+    locationId: installation.ghl_location_id,
+    companyId: installation.ghl_company_id,
+    userType: installation.ghl_user_type
+  };
+}
 
-  installationCache = created[0];
-  return installationCache;
+async function getInstallation(client, options = {}) {
+  const context = {
+    ...getRequestContext(),
+    ...(options.context ?? {})
+  };
+  const installationId = cleanString(context.installationId);
+  const contextLocationId = cleanString(context.locationId);
+  const requiresInstallationContext = String(process.env.REQUIRE_INSTALLATION_CONTEXT || 'false') === 'true';
+
+  if (requiresInstallationContext && !installationId && !contextLocationId) {
+    const error = new Error('Missing installation context. Open the app from HighLevel or pass locationId/installationId.');
+    error.status = 401;
+    throw error;
+  }
+
+  const locationId = cleanString(
+    contextLocationId ||
+      process.env.SUPABASE_GHL_LOCATION_ID ||
+      process.env.GHL_LOCATION_ID ||
+      DEFAULT_LOCATION_ID
+  );
+  const cacheKey = installationId ? `id:${installationId}` : `location:${locationId}`;
+
+  if (installationCache.has(cacheKey)) return installationCache.get(cacheKey);
+
+  const existing = installationId
+    ? await client.select('app_installations', {
+        id: `eq.${installationId}`,
+        limit: '1'
+      })
+    : await client.select('app_installations', {
+        ghl_location_id: `eq.${locationId}`,
+        limit: '1'
+      });
+
+  if (existing[0]) {
+    installationCache.set(cacheKey, existing[0]);
+    return existing[0];
+  }
+
+  if (options.createIfMissing === false || !locationId) return null;
+
+  return upsertInstallation(client, {
+    locationId,
+    companyId: context.companyId || process.env.GHL_COMPANY_ID,
+    userType: context.userType || process.env.GHL_OAUTH_USER_TYPE || 'Location',
+    displayName: process.env.SUPABASE_INSTALLATION_NAME || process.env.GHL_LOCATION_NAME,
+    isSandbox: String(process.env.SUPABASE_IS_SANDBOX || 'true') === 'true'
+  });
+}
+
+async function upsertInstallation(client, input = {}) {
+  const locationId = cleanString(
+    input.locationId ||
+      input.location_id ||
+      input.ghl_location_id ||
+      input.location?.id ||
+      input.data?.locationId ||
+      input.data?.location_id
+  );
+
+  if (!locationId) {
+    const error = new Error('Installation payload did not include a HighLevel locationId.');
+    error.status = 400;
+    throw error;
+  }
+
+  const now = new Date().toISOString();
+  const rows = await client.upsert(
+    'app_installations',
+    {
+      ghl_company_id: cleanString(input.companyId || input.company_id || input.ghl_company_id || input.company?.id),
+      ghl_location_id: locationId,
+      ghl_user_type: cleanString(input.userType || input.user_type || input.ghl_user_type) || 'Location',
+      display_name: cleanString(
+        input.displayName ||
+          input.display_name ||
+          input.locationName ||
+          input.location_name ||
+          input.companyName ||
+          input.company_name ||
+          process.env.SUPABASE_INSTALLATION_NAME ||
+          process.env.GHL_LOCATION_NAME
+      ),
+      is_sandbox: Boolean(input.isSandbox ?? input.is_sandbox ?? String(process.env.SUPABASE_IS_SANDBOX || 'true') === 'true'),
+      connection_status: cleanString(input.connectionStatus || input.connection_status) || 'connected',
+      connection_error: cleanString(input.connectionError || input.connection_error),
+      installed_at: input.installedAt || input.installed_at || now,
+      updated_at: now,
+      uninstalled_at: null
+    },
+    'ghl_location_id'
+  );
+
+  const installation = rows[0] ?? null;
+  if (installation) {
+    installationCache.set(`id:${installation.id}`, installation);
+    installationCache.set(`location:${installation.ghl_location_id}`, installation);
+  }
+
+  return installation;
 }
 
 async function readVersions(client, installationId) {
@@ -308,6 +497,7 @@ async function readVersions(client, installationId) {
   const parameterGroups = await Promise.all(
     versions.map(async (version) => {
       const parameters = await client.select('llm_parameters', {
+        installation_id: `eq.${installationId}`,
         version_id: `eq.${version.id}`,
         order: 'sort_order.asc'
       });
@@ -352,10 +542,13 @@ async function writeVersions(client, installationId, versions) {
 
   for (const version of versions) {
     await client.delete('llm_parameters', {
+      installation_id: `eq.${installationId}`,
       version_id: `eq.${version.id}`
     });
 
-    const parameters = (version.parameters ?? []).map((parameter, index) => parameterToRow(parameter, version.id, index));
+    const parameters = (version.parameters ?? []).map((parameter, index) =>
+      parameterToRow(parameter, version.id, index, installationId)
+    );
     if (parameters.length > 0) {
       await client.insert('llm_parameters', parameters);
     }
@@ -396,7 +589,7 @@ async function writeProfiles(client, installationId, profiles) {
       if (!agentId) return null;
 
       return {
-        id: profile.id || `profile-${agentId}`,
+        id: `profile-${installationId}-${agentId}`,
         installation_id: installationId,
         ghl_agent_id: agentId,
         agent_name_snapshot: profile.agentNames?.[0] || '',
@@ -410,7 +603,7 @@ async function writeProfiles(client, installationId, profiles) {
     .filter(Boolean);
 
   if (rows.length > 0) {
-    await client.upsert('agent_observability_profiles', rows);
+    await client.upsert('agent_observability_profiles', rows, 'installation_id,ghl_agent_id');
   }
 
   return profiles;
@@ -484,7 +677,7 @@ async function writeAnalyses(client, installationId, analyses) {
     ]);
 
     const parameterResults = (analysis.parameterResults ?? []).map((result, index) =>
-      parameterResultToRow(result, analysis.id, index)
+      parameterResultToRow(result, analysis.id, index, installationId)
     );
     const recommendations = (analysis.recommendations ?? []).map((recommendation) =>
       recommendationToRow(recommendation, installationId, analysis)
@@ -517,11 +710,12 @@ function rowToParameter(row) {
   };
 }
 
-function parameterToRow(parameter, versionId, index) {
+function parameterToRow(parameter, versionId, index, installationId) {
   const parameterKey = parameter.id || slug(parameter.title || `parameter-${index + 1}`);
 
   return {
     id: `${versionId}-${parameterKey}`,
+    installation_id: installationId,
     version_id: versionId,
     parameter_key: parameterKey,
     title: parameter.title || '',
@@ -579,11 +773,12 @@ function rowToParameterResult(row) {
   };
 }
 
-function parameterResultToRow(result, analysisId, index) {
+function parameterResultToRow(result, analysisId, index, installationId) {
   const parameterKey = result.parameterId || `parameter-${index + 1}`;
 
   return {
     id: `${analysisId}-result-${parameterKey}`,
+    installation_id: installationId,
     analysis_id: analysisId,
     parameter_key: parameterKey,
     title: result.title || '',
@@ -716,6 +911,17 @@ function parseJson(value) {
   } catch {
     return null;
   }
+}
+
+function calculateExpiresAt(expiresIn) {
+  const seconds = Number(expiresIn);
+  if (!Number.isFinite(seconds) || seconds <= 0) return null;
+  return new Date(Date.now() + seconds * 1000).toISOString();
+}
+
+function parseScopes(scopes) {
+  if (Array.isArray(scopes)) return scopes.map(cleanString).filter(Boolean);
+  return cleanString(scopes).split(/\s|,/).map(cleanString).filter(Boolean);
 }
 
 function slug(value) {
