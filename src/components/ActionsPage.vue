@@ -1,5 +1,5 @@
-<script setup>
-import { ArrowRight, CheckCircle2, Search, Settings2, Trash2, UserRound, X } from '@lucide/vue';
+﻿<script setup>
+import { ArrowRight, CheckCircle2, Search, Settings2, Trash2, X } from '@lucide/vue';
 import { computed, ref } from 'vue';
 
 const props = defineProps({
@@ -19,28 +19,11 @@ const props = defineProps({
 
 defineEmits(['delete-action', 'show-agent-review', 'show-call', 'update-action-status']);
 
-const activeActionTab = ref('customer');
 const searchQuery = ref('');
-
-const actionBuckets = computed(() => {
-  const buckets = {
-    customer: [],
-    system: []
-  };
-
-  for (const action of props.actions) {
-    buckets[actionCategory(action)].push(action);
-  }
-
-  return {
-    customer: sortActions(buckets.customer),
-    system: sortActions(buckets.system)
-  };
-});
 
 const selectedActions = computed(() => {
   const query = searchQuery.value.trim().toLowerCase();
-  const actions = actionBuckets.value[activeActionTab.value] ?? [];
+  const actions = sortActions(props.actions);
   if (!query) return actions;
 
   return actions.filter((action) =>
@@ -49,10 +32,10 @@ const selectedActions = computed(() => {
       action.reason,
       action.suggestion,
       action.snippet,
-      action.contactName,
       action.agentName,
       action.type,
-      action.targetType
+      action.targetType,
+      ...(action.sourceCalls ?? []).map((call) => call.contactName)
     ]
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes(query))
@@ -61,38 +44,30 @@ const selectedActions = computed(() => {
 
 const actionStats = computed(() => ({
   critical: props.actions.filter((action) => action.severity === 'critical').length,
-  customer: actionBuckets.value.customer.length,
-  system: actionBuckets.value.system.length
+  prompt: props.actions.filter((action) => ['prompt_update', 'agent_profile_update'].includes(action.type)).length,
+  parameters: props.actions.filter((action) => ['parameter_update', 'parameter_create', 'parameter_version_change'].includes(action.type)).length
 }));
-
-function normalizeType(type) {
-  return String(type || '').toLowerCase();
-}
 
 function actionTypeLabel(type) {
   const labels = {
-    human_review: 'Human review',
-    script_training: 'Script training',
-    follow_up: 'Follow-up',
     prompt_update: 'Prompt update',
-    parameter_update: 'Parameter update'
+    agent_profile_update: 'Agent profile update',
+    script_training: 'Script training',
+    parameter_update: 'Parameter update',
+    parameter_create: 'New parameter',
+    parameter_version_change: 'Parameter version change'
   };
 
-  return labels[type] ?? type ?? 'Human review';
+  return labels[type] ?? type ?? 'System improvement';
 }
 
-function actionCategory(action) {
-  if (['customer', 'system'].includes(action?.category)) return action.category;
-  if (action?.targetType === 'human_follow_up' || normalizeType(action?.type).includes('follow')) return 'customer';
-  return 'system';
-}
+function targetTypeLabel(type) {
+  const labels = {
+    agent_profile: 'Agent profile',
+    observability_parameter: 'Observability parameter'
+  };
 
-function actionCategoryLabel(category) {
-  return category === 'customer' ? 'Customer follow-up' : 'System improvements';
-}
-
-function actionPrimaryLabel(action) {
-  return actionCategory(action) === 'customer' ? 'Done' : 'Apply';
+  return labels[type] ?? 'Agent setup';
 }
 
 function sortActions(actions) {
@@ -107,7 +82,7 @@ function sortActions(actions) {
     .sort(
       (a, b) =>
         (severityOrder[a.severity] ?? 3) - (severityOrder[b.severity] ?? 3) ||
-        new Date(b.createdAt || 0) - new Date(a.createdAt || 0)
+        new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0)
     );
 }
 </script>
@@ -116,10 +91,10 @@ function sortActions(actions) {
   <section class="actions-page">
     <header class="workspace-list-heading">
       <div>
-        <p class="eyebrow">Human actions</p>
-        <h2>Action queue</h2>
+        <p class="eyebrow">Agent system improvements</p>
+        <h2>Improvement queue</h2>
         <p>
-          Review customer follow-ups separately from system improvements, so the queue stays usable as call volume grows.
+          Review prompt, profile, script-training, and observability-parameter changes suggested from analyzed calls.
         </p>
       </div>
       <span>{{ actions.length }} open</span>
@@ -132,14 +107,14 @@ function sortActions(actions) {
         <small>{{ selectedAgentName }}</small>
       </article>
       <article>
-        <span>Customer</span>
-        <strong>{{ actionStats.customer }}</strong>
-        <small>follow-up queue</small>
+        <span>Prompt/Profile</span>
+        <strong>{{ actionStats.prompt }}</strong>
+        <small>agent setup</small>
       </article>
       <article>
-        <span>System</span>
-        <strong>{{ actionStats.system }}</strong>
-        <small>improvement queue</small>
+        <span>Parameters</span>
+        <strong>{{ actionStats.parameters }}</strong>
+        <small>observability setup</small>
       </article>
       <article>
         <span>Critical</span>
@@ -148,40 +123,12 @@ function sortActions(actions) {
       </article>
     </section>
 
-    <section class="action-workbench">
-      <div class="action-tab-row" role="tablist" aria-label="Action categories">
-        <button
-          class="action-category-tab"
-          :class="{ active: activeActionTab === 'customer' }"
-          type="button"
-          role="tab"
-          :aria-selected="activeActionTab === 'customer'"
-          @click="activeActionTab = 'customer'"
-        >
-          <UserRound :size="17" />
-          <span>Customer</span>
-          <small>{{ actionBuckets.customer.length }}</small>
-        </button>
-
-        <button
-          class="action-category-tab"
-          :class="{ active: activeActionTab === 'system' }"
-          type="button"
-          role="tab"
-          :aria-selected="activeActionTab === 'system'"
-          @click="activeActionTab = 'system'"
-        >
-          <Settings2 :size="17" />
-          <span>System</span>
-          <small>{{ actionBuckets.system.length }}</small>
-        </button>
-      </div>
-
+    <section class="action-workbench single">
       <div class="action-queue-panel">
         <div class="action-queue-toolbar">
           <div>
-            <p class="eyebrow">{{ actionCategoryLabel(activeActionTab) }}</p>
-            <h3>{{ selectedActions.length }} matching actions</h3>
+            <p class="eyebrow">System improvements</p>
+            <h3>{{ selectedActions.length }} matching items</h3>
           </div>
 
           <label class="action-search">
@@ -189,8 +136,8 @@ function sortActions(actions) {
             <input
               v-model="searchQuery"
               type="search"
-              placeholder="Search contact, agent, action, or suggestion"
-              aria-label="Search actions"
+              placeholder="Search agent, improvement, or suggestion"
+              aria-label="Search system improvements"
             />
             <button v-if="searchQuery" type="button" aria-label="Clear search" @click="searchQuery = ''">
               <X :size="15" />
@@ -202,45 +149,45 @@ function sortActions(actions) {
           <article
             v-for="action in selectedActions"
             :key="action.id"
-            class="human-action-row compact"
-            :class="actionCategory(action)"
+            class="human-action-row compact system"
           >
             <span class="severity-dot" :class="action.severity"></span>
 
             <div class="human-action-main">
               <div class="human-action-topline">
                 <span>{{ actionTypeLabel(action.type) }}</span>
-                <small>{{ action.source === 'llm' ? 'LLM suggested' : 'Rule suggested' }}</small>
-                <small>{{ helpers.formatDate(action.createdAt) }}</small>
+                <small>{{ targetTypeLabel(action.targetType) }}</small>
+                <small>{{ action.sourceCallCount || action.sourceCallIds?.length || 1 }} source calls</small>
+                <small>{{ helpers.formatDate(action.updatedAt || action.createdAt) }}</small>
               </div>
               <h3>{{ action.title || action.reason }}</h3>
               <p v-if="action.title">{{ action.reason }}</p>
               <div v-if="action.suggestion" class="action-suggestion-box compact">
-                <span>{{ actionCategory(action) === 'customer' ? 'Customer action' : 'System change' }}</span>
+                <span>Suggested system change</span>
                 <p>{{ action.suggestion }}</p>
               </div>
               <p v-if="action.snippet" class="action-snippet compact">{{ action.snippet }}</p>
               <div class="human-action-meta">
-                <span>{{ action.contactName || 'Unknown contact' }}</span>
                 <span>{{ helpers.displayAgentName(action.agentId, action.agentName) }}</span>
+                <span>{{ action.parameterId || 'Agent-level' }}</span>
               </div>
             </div>
 
             <div class="human-action-buttons">
-              <button class="text-button compact" type="button" @click="$emit('show-call', action.callId)">
-                Open call
+              <button v-if="action.callId" class="text-button compact" type="button" @click="$emit('show-call', action.callId)">
+                Source call
                 <ArrowRight :size="14" />
               </button>
               <button class="text-button compact" type="button" @click="$emit('show-agent-review', action.agentId)">
                 Agent
               </button>
               <button class="text-button compact" type="button" @click="$emit('update-action-status', { action, status: 'done' })">
-                {{ actionPrimaryLabel(action) }}
+                Apply
               </button>
               <button class="text-button compact" type="button" @click="$emit('update-action-status', { action, status: 'dismissed' })">
                 Ignore
               </button>
-              <button class="icon-button danger" type="button" :aria-label="`Delete action ${action.id}`" @click="$emit('delete-action', action)">
+              <button class="icon-button danger" type="button" :aria-label="`Delete system improvement ${action.id}`" @click="$emit('delete-action', action)">
                 <Trash2 :size="15" />
               </button>
             </div>
@@ -248,15 +195,9 @@ function sortActions(actions) {
 
           <section v-if="selectedActions.length === 0" class="empty-directory action-empty-state">
             <CheckCircle2 :size="26" />
-            <h3>No {{ activeActionTab }} actions found</h3>
-            <p v-if="searchQuery">No open actions match the current search.</p>
-            <p v-else>
-              {{
-                activeActionTab === 'customer'
-                  ? 'Customer callbacks, escalations, and requested follow-ups will appear here.'
-                  : 'Prompt, agent profile, script training, and parameter updates will appear here.'
-              }}
-            </p>
+            <h3>No system improvements found</h3>
+            <p v-if="searchQuery">No open improvements match the current search.</p>
+            <p v-else>Prompt, agent profile, script-training, and parameter improvements will appear here after call analysis.</p>
           </section>
         </div>
       </div>

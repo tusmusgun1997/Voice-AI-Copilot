@@ -39,8 +39,7 @@ try {
         'call_analysis_jobs',
         'call_analyses',
         'call_parameter_results',
-        'call_recommendations',
-        'human_actions'
+        'agent_system_improvements'
       )
     order by table_name;
   `);
@@ -52,3 +51,4 @@ try {
 } finally {
   await client.end();
 }
+

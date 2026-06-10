@@ -2,6 +2,8 @@
 import { ArrowRight } from '@lucide/vue';
 import { computed } from 'vue';
 
+const PASSING_SCORE = 80;
+
 const props = defineProps({
   agentDirectory: {
     type: Array,
@@ -55,17 +57,33 @@ const callOnlyAgentCount = computed(() => {
   return Array.from(callAgentIds).filter((agentId) => !activeAgentIds.has(agentId)).length;
 });
 
+const allAgentOutcomeStats = computed(() =>
+  props.agentDirectory.reduce(
+    (stats, agent) => ({
+      passed: stats.passed + Number(agent.passedCallCount || 0),
+      failed: stats.failed + Number(agent.failedCallCount || 0),
+      analyzed: stats.analyzed + Number(agent.totalAnalyzedCalls || agent.analyzedCallCount || 0)
+    }),
+    { passed: 0, failed: 0, analyzed: 0 }
+  )
+);
+
 function callAnalysis(call) {
   return analysisByCallId.value.get(call.id) ?? {
     status: call.llmAnalysisStatus,
     stage: call.llmStage,
     score: call.llmScore,
+    outcome: call.llmOutcome || call.outcome,
     summary: call.llmSummary,
     parameterResults: call.llmParameterResults
   };
 }
 
 function analysisLabel(analysis) {
+  const outcome = callOutcome(analysis);
+  if (outcome === 'passed') return 'Passed';
+  if (outcome === 'failed') return 'Failed';
+
   const stage = analysis?.stage || '';
   const status = analysis?.status || '';
   const labels = {
@@ -75,24 +93,24 @@ function analysisLabel(analysis) {
     waiting_for_transcript: 'Waiting for transcript',
     missing_parameters: 'Missing parameters',
     analysis_failed: 'Failed',
-    healthy: 'Healthy',
+    healthy: 'Passed',
     monitor: 'Monitor',
     needs_review: 'Needs review',
-    human_follow_up: 'Human follow-up',
     script_training: 'Script training'
   };
 
-  return labels[stage] || labels[status] || (status ? status.replace(/_/g, ' ') : 'Not queued');
+  return labels[stage] || labels[status] || (status ? status.replace(/_/g, ' ') : 'Not analyzed');
 }
 
 function analysisClass(analysis) {
+  const outcome = callOutcome(analysis);
   const stage = analysis?.stage || '';
   const status = analysis?.status || '';
 
+  if (outcome === 'passed') return 'healthy';
+  if (outcome === 'failed') return 'attention';
   if (status === 'failed' || stage === 'analysis_failed') return 'failed';
   if (status === 'queued' || status === 'running' || status === 'retrying') return 'active';
-  if (stage === 'healthy') return 'healthy';
-  if (stage === 'human_follow_up' || stage === 'script_training' || stage === 'needs_review') return 'attention';
   if (stage === 'missing_parameters') return 'muted';
   return 'monitor';
 }
@@ -102,6 +120,18 @@ function analysisScore(analysis, fallbackScore) {
   return fallbackScore;
 }
 
+function callOutcome(analysis) {
+  if (analysis?.outcome && analysis.outcome !== 'pending') return analysis.outcome;
+  const score = Number(analysis?.score);
+  if (!Number.isFinite(score)) return 'pending';
+  return score >= PASSING_SCORE ? 'passed' : 'failed';
+}
+
+function agentOutcomeCopy(agent) {
+  const analyzed = Number(agent.totalAnalyzedCalls || agent.analyzedCallCount || 0);
+  if (!analyzed) return `${agent.callCount || 0} calls`;
+  return `${agent.passedCallCount || 0} passed / ${agent.failedCallCount || 0} failed`;
+}
 </script>
 
 <template>
@@ -129,7 +159,10 @@ function analysisScore(analysis, fallbackScore) {
       >
         <span>
           <strong>All agents</strong>
-          <small>{{ totalCallCount }}</small>
+          <small v-if="allAgentOutcomeStats.analyzed">
+            {{ allAgentOutcomeStats.passed }} passed / {{ allAgentOutcomeStats.failed }} failed
+          </small>
+          <small v-else>{{ totalCallCount }} calls</small>
         </span>
       </button>
 
@@ -143,7 +176,7 @@ function analysisScore(analysis, fallbackScore) {
       >
         <span>
           <strong>{{ agent.displayName }}</strong>
-          <small>{{ agent.callCount }}</small>
+          <small>{{ agentOutcomeCopy(agent) }}</small>
         </span>
       </button>
     </div>
@@ -168,10 +201,6 @@ function analysisScore(analysis, fallbackScore) {
           </span>
           <span class="call-metrics">
             <span>
-              <strong>{{ helpers.formatStatus(call.status) }}</strong>
-              <small>Status</small>
-            </span>
-            <span>
               <strong>{{ helpers.formatDuration(call.durationSeconds) }}</strong>
               <small>Duration</small>
             </span>
@@ -184,8 +213,10 @@ function analysisScore(analysis, fallbackScore) {
               <small>Turns</small>
             </span>
             <span>
-              <strong>{{ analysisLabel(callAnalysis(call)) }}</strong>
-              <small>LLM</small>
+              <strong :class="`call-outcome-label ${analysisClass(callAnalysis(call))}`">
+                {{ analysisLabel(callAnalysis(call)) }}
+              </strong>
+              <small>LLM outcome</small>
             </span>
           </span>
           <ArrowRight class="expand-icon" :size="18" />

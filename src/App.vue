@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import {
   Activity,
   AlertTriangle,
@@ -73,7 +73,7 @@ const navItems = computed(() => [
     id: 'actions',
     label: 'Actions',
     icon: ClipboardCheck,
-    count: filteredHumanActions.value.length
+    count: filteredSystemImprovements.value.length
   },
   {
     id: 'llm-parameters',
@@ -96,14 +96,17 @@ const filteredIssues = computed(() => {
   return (dashboard.value?.issues ?? []).filter((issue) => calls.has(issue.callId));
 });
 
-const filteredUseActions = computed(() => {
-  const calls = new Set(filteredCalls.value.map((call) => call.id));
-  return (dashboard.value?.useActions ?? []).filter((action) => calls.has(action.callId));
+const filteredSystemImprovements = computed(() => {
+  const improvements = dashboard.value?.systemImprovements ?? dashboard.value?.useActions ?? [];
+  return improvements.filter((improvement) => {
+    const agentMatch = selectedAgent.value === 'all' || improvement.agentId === selectedAgent.value;
+    const statusMatch = !improvement.status || ['open', 'in_review'].includes(improvement.status);
+    return agentMatch && statusMatch;
+  });
 });
 
-const filteredHumanActions = computed(() =>
-  filteredUseActions.value.filter((action) => action.source === 'llm' && (!action.status || ['open', 'in_review'].includes(action.status)))
-);
+const filteredUseActions = computed(() => filteredSystemImprovements.value);
+const filteredHumanActions = computed(() => filteredSystemImprovements.value);
 
 const criticalIssueCount = computed(() => filteredIssues.value.filter((issue) => issue.severity === 'critical').length);
 
@@ -152,12 +155,12 @@ const agentDirectory = computed(() => {
   const agents = dashboard.value?.agents ?? [];
   const calls = dashboard.value?.calls ?? [];
   const issues = dashboard.value?.issues ?? [];
-  const useActions = dashboard.value?.useActions ?? [];
+  const useActions = dashboard.value?.systemImprovements ?? dashboard.value?.useActions ?? [];
 
   return agents.map((agent, index) => {
     const agentCalls = calls.filter((call) => call.agentId === agent.id);
     const agentIssues = issues.filter((issue) => issue.agentId === agent.id);
-    const agentUseActions = useActions.filter((action) => action.agentId === agent.id && action.source === 'llm');
+    const agentUseActions = useActions.filter((action) => action.agentId === agent.id);
     const recentCalls = agentCalls.slice(0, 3);
     const savedProfile = savedObservabilityProfileByAgent.value[agent.id] ?? observabilityProfileByAgent.value[agent.id] ?? null;
     const parameterVersionId = savedProfile?.parameterVersionId || '';
@@ -190,7 +193,7 @@ const selectedObservabilityProfile = computed(() =>
 const overviewAgents = computed(() =>
   agentDirectory.value
     .slice()
-    .sort((a, b) => (b.issueCount + b.useActionCount) - (a.issueCount + a.useActionCount) || (a.averageScore ?? 101) - (b.averageScore ?? 101))
+    .sort((a, b) => (b.issueCount + b.systemImprovementCount) - (a.issueCount + a.systemImprovementCount) || (a.averageScore ?? 101) - (b.averageScore ?? 101))
     .slice(0, 4)
 );
 
@@ -200,19 +203,18 @@ const overviewActions = computed(() => filteredHumanActions.value.slice(0, 3));
 
 const overviewHealthLabel = computed(() => {
   if (criticalIssueCount.value > 0) return 'Needs attention';
-  if (filteredHumanActions.value.length > 0) return 'Follow-up active';
+  if (filteredSystemImprovements.value.length > 0) return 'System improvements active';
   return 'Stable';
 });
 
 const callDetailsById = computed(() => {
   const issues = dashboard.value?.issues ?? [];
-  const useActions = dashboard.value?.useActions ?? [];
   const details = new Map();
 
   for (const call of dashboard.value?.calls ?? []) {
     details.set(call.id, {
       issues: issues.filter((issue) => issue.callId === call.id),
-      useActions: useActions.filter((action) => action.callId === call.id && action.source === 'llm'),
+      useActions: [],
       transcriptTurns: parseTranscript(call.transcript)
     });
   }
@@ -819,7 +821,7 @@ async function updateHumanActionStatus(action, status) {
   error.value = '';
 
   try {
-    const response = await fetch(`/api/human-actions/${encodeURIComponent(action.id)}`, {
+    const response = await fetch(`/api/system-improvements/${encodeURIComponent(action.id)}`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json'
@@ -829,7 +831,7 @@ async function updateHumanActionStatus(action, status) {
     const body = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      throw new Error(body.message || 'Unable to update action');
+      throw new Error(body.message || 'Unable to update system improvement');
     }
 
     await loadDashboard({ silent: true });
@@ -844,13 +846,13 @@ async function deleteHumanAction(action) {
   error.value = '';
 
   try {
-    const response = await fetch(`/api/human-actions/${encodeURIComponent(action.id)}`, {
+    const response = await fetch(`/api/system-improvements/${encodeURIComponent(action.id)}`, {
       method: 'DELETE'
     });
     const body = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      throw new Error(body.message || 'Unable to delete action');
+      throw new Error(body.message || 'Unable to delete system improvement');
     }
 
     await loadDashboard({ silent: true });
@@ -911,7 +913,8 @@ function getCallAnalysis(call) {
     score: call.llmScore,
     summary: call.llmSummary,
     parameterResults: call.llmParameterResults ?? [],
-    useActions: call.llmUseActions ?? [],
+    useActions: [],
+    systemImprovements: call.llmSystemImprovements ?? [],
     errorMessage: call.llmAnalysisError || ''
   };
 }
@@ -1379,3 +1382,4 @@ const helpers = {
     </section>
   </main>
 </template>
+

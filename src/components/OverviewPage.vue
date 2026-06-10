@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 const props = defineProps({
   criticalIssueCount: {
     type: Number,
@@ -66,7 +66,7 @@ function setupMessage() {
         <h2>{{ overviewHealthLabel }}</h2>
         <p>
           {{ dashboard.summary.totalCalls }} calls across {{ dashboard.summary.monitoredAgents }} agents.
-          {{ criticalIssueCount }} critical issues and {{ filteredUseActions.length }} human actions need review.
+          {{ criticalIssueCount }} critical issues and {{ filteredUseActions.length }} system improvements need review.
         </p>
       </div>
       <button class="detail-button" type="button" @click="$emit('set-view', 'calls')">
@@ -150,24 +150,25 @@ function setupMessage() {
       <article class="overview-panel">
         <div class="overview-panel-heading">
           <div>
-            <p class="eyebrow">Actions</p>
-            <h2>Human follow-up</h2>
+            <p class="eyebrow">System improvements</p>
+            <h2>Agent setup queue</h2>
           </div>
           <button class="text-button compact" type="button" @click="$emit('set-view', 'actions')">
             View all
           </button>
         </div>
         <div class="overview-action-list">
-          <button v-for="action in overviewActions" :key="action.id" type="button" @click="$emit('show-call', action.callId)">
+          <button v-for="action in overviewActions" :key="action.id" type="button" @click="action.callId && $emit('show-call', action.callId)">
             <span class="severity-dot" :class="action.severity"></span>
             <div>
-              <strong>{{ action.type }}</strong>
-              <small>{{ action.contactName }} - {{ helpers.displayAgentName(action.agentId, action.agentName) }}</small>
+              <strong>{{ action.title || action.type }}</strong>
+              <small>{{ helpers.displayAgentName(action.agentId, action.agentName) }}</small>
             </div>
           </button>
-          <p v-if="overviewActions.length === 0" class="empty-copy">No open actions for the current filters.</p>
+          <p v-if="overviewActions.length === 0" class="empty-copy">No open system improvements for the current filters.</p>
         </div>
       </article>
     </section>
   </section>
 </template>
+

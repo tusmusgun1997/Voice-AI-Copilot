@@ -1,4 +1,5 @@
-import { upsertCallAnalysis } from './analysisStore.js';
+﻿import { upsertCallAnalysis } from './analysisStore.js';
+import { getCallOutcome } from './analysisOutcome.js';
 import { fetchVoiceAiAgent, fetchVoiceAiAgents, fetchVoiceAiCallLogs } from './highlevelClient.js';
 import { analyzeCallWithOpenAI } from './llmCallAnalyzer.js';
 import { getAgentObservabilityProfile } from './observabilityProfiles.js';
@@ -155,10 +156,12 @@ export function createCallAnalysisQueue(config = {}) {
           status: analysis.status,
           stage: analysis.stage,
           score: analysis.score,
+          outcome: getCallOutcome(analysis.score),
           summary: analysis.summary,
           parameterResults: analysis.parameterResults,
           recommendations: [],
-          useActions: decorateUseActions(analysis.useActions, call),
+          useActions: [],
+          systemImprovements: decorateSystemImprovements(analysis.systemImprovements, call),
           model: config.openAiModel,
           queuedReason: job.queuedReason,
           attempts: job.attempts,
@@ -369,28 +372,28 @@ function normalizeTranscript(transcript) {
   return '';
 }
 
-function decorateUseActions(useActions, call) {
-  return useActions.map((action, index) => ({
-    id: `${call.id}-llm-action-${index + 1}`,
-    callId: call.id,
+function decorateSystemImprovements(systemImprovements = [], call) {
+  return systemImprovements.map((improvement, index) => ({
+    id: improvement.id || `improvement-${call.agentId}-${improvement.type || 'system'}-${improvement.parameterId || index + 1}`,
     agentId: call.agentId,
-    title: action.title || action.reason || 'Human review needed',
-    type: action.type,
-    category: action.category || actionCategoryFromSignals(action.type, action.targetType),
-    reason: action.reason,
-    suggestion: action.suggestion || '',
-    snippet: action.snippet,
-    severity: action.severity,
-    parameterId: action.parameterId,
-    targetType: action.targetType || 'human_follow_up',
-    targetId: action.targetId || action.parameterId || '',
-    status: action.status || 'open'
+    agentName: call.agentName,
+    title: improvement.title || improvement.reason || 'System improvement needed',
+    type: improvement.type || 'prompt_update',
+    reason: improvement.reason || '',
+    suggestion: improvement.suggestion || '',
+    snippet: improvement.snippet || '',
+    severity: improvement.severity || 'warning',
+    parameterId: improvement.parameterId || '',
+    targetType: systemTargetType(improvement.targetType),
+    targetId: improvement.targetId || improvement.parameterId || '',
+    sourceCallIds: [call.id].filter(Boolean),
+    status: improvement.status || 'open'
   }));
 }
 
-function actionCategoryFromSignals(type, targetType) {
-  if (targetType === 'human_follow_up' || type === 'follow_up') return 'customer';
-  return 'system';
+function systemTargetType(targetType) {
+  if (['agent_profile', 'observability_parameter'].includes(targetType)) return targetType;
+  return 'agent_profile';
 }
 
 function extractWebhookIds(payload = {}) {
@@ -449,3 +452,4 @@ function cleanString(value) {
   if (value === null || value === undefined) return '';
   return String(value).trim();
 }
+

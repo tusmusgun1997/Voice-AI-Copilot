@@ -1,4 +1,4 @@
-import { Router } from 'express';
+﻿import { Router } from 'express';
 import { asyncHandler } from '../utils/http.js';
 
 export function createApiRouter(controllers) {
@@ -10,6 +10,8 @@ export function createApiRouter(controllers) {
   router.get('/call-analyses/:callId', asyncHandler(controllers.calls.getAnalysis));
   router.post('/call-analyses/:callId/analyze', asyncHandler(controllers.calls.analyzeCall));
   router.get('/analysis-jobs', asyncHandler(controllers.calls.listAnalysisJobs));
+  router.patch('/system-improvements/:actionId', asyncHandler(controllers.calls.updateAction));
+  router.delete('/system-improvements/:actionId', asyncHandler(controllers.calls.deleteAction));
   router.patch('/human-actions/:actionId', asyncHandler(controllers.calls.updateAction));
   router.delete('/human-actions/:actionId', asyncHandler(controllers.calls.deleteAction));
 
@@ -32,3 +34,4 @@ export function createApiRouter(controllers) {
 
   return router;
 }
+

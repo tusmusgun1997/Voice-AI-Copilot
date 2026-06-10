@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { RefreshCw } from '@lucide/vue';
 import { computed } from 'vue';
 
@@ -24,10 +24,10 @@ const props = defineProps({
 defineEmits(['refresh']);
 
 const descriptions = {
-  Overview: 'Track the full loop from call transcripts to issues, actions, and agent improvements.',
+  Overview: 'Track the full loop from call transcripts to agent-level system improvements.',
   Agents: 'Manage Voice AI agents, prompts, observability parameters, and operating details.',
-  Calls: 'Review transcript logs, scoring signals, issues, and use actions by agent.',
-  Actions: 'Review caller-facing follow-ups, escalations, and training actions suggested from calls.',
+  Calls: 'Review transcript logs, scoring signals, and pass/fail outcomes by agent.',
+  Actions: 'Review agent-level prompt, profile, script-training, and observability improvements.',
   'LLM Parameters': 'Create reusable, versioned transcript evaluation checklists for agents.'
 };
 
@@ -59,3 +59,4 @@ const subtitle = computed(() => descriptions[props.activeViewTitle] ?? 'Monitor 
     </div>
   </header>
 </template>
+

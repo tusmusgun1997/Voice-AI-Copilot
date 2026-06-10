@@ -1,17 +1,11 @@
-<script setup>
+﻿<script setup>
 import {
   ArrowLeft,
-  CheckCircle2,
-  ClipboardCheck,
-  FileText,
+  CheckCircle2,  FileText,
   ListChecks,
   MessageSquareText,
   MinusCircle,
-  RefreshCw,
-  Settings2,
-  Trash2,
-  UserRound,
-  XCircle,
+  RefreshCw,  XCircle,
   CircleHelp
 } from '@lucide/vue';
 import { computed, ref } from 'vue';
@@ -39,20 +33,17 @@ const props = defineProps({
   }
 });
 
-defineEmits(['analyze-call', 'back-to-calls', 'delete-action', 'update-action-status']);
+defineEmits(['analyze-call', 'back-to-calls']);
 
 const activeTab = ref('summary');
 
 const tabs = computed(() => [
   { id: 'summary', label: 'LLM summary', icon: MessageSquareText },
   { id: 'parameters', label: 'Parameters summary', icon: ListChecks },
-  { id: 'actions', label: 'Actions', icon: ClipboardCheck, count: props.callDetails.useActions.length },
   { id: 'transcript', label: 'Transcript', icon: FileText, count: props.callDetails.transcriptTurns.length }
 ]);
 
 const analysis = computed(() => props.callAnalysis ?? {});
-const customerActions = computed(() => props.callDetails.useActions.filter((action) => actionCategory(action) === 'customer'));
-const systemActions = computed(() => props.callDetails.useActions.filter((action) => actionCategory(action) === 'system'));
 
 function analysisLabel(value) {
   const stage = value?.stage || '';
@@ -67,7 +58,6 @@ function analysisLabel(value) {
     healthy: 'Healthy',
     monitor: 'Monitor',
     needs_review: 'Needs review',
-    human_follow_up: 'Human follow-up',
     script_training: 'Script training'
   };
 
@@ -81,7 +71,7 @@ function analysisClass(value) {
   if (status === 'failed' || stage === 'analysis_failed') return 'failed';
   if (status === 'queued' || status === 'running' || status === 'retrying') return 'active';
   if (stage === 'healthy') return 'healthy';
-  if (stage === 'human_follow_up' || stage === 'script_training' || stage === 'needs_review') return 'attention';
+  if (stage === 'script_training' || stage === 'needs_review') return 'attention';
   if (stage === 'missing_parameters') return 'muted';
   return 'monitor';
 }
@@ -113,33 +103,6 @@ function parameterStatusLabel(status) {
   return labels[status] ?? 'Unknown';
 }
 
-function actionTypeLabel(type) {
-  const labels = {
-    human_review: 'Human review',
-    script_training: 'Script training',
-    follow_up: 'Follow-up',
-    prompt_update: 'Prompt update',
-    parameter_update: 'Parameter update'
-  };
-
-  return labels[type] ?? type ?? 'Human review';
-}
-
-function targetTypeLabel(type) {
-  const labels = {
-    agent_profile: 'Agent profile',
-    observability_parameter: 'Observability parameter',
-    human_follow_up: 'Human follow-up'
-  };
-
-  return labels[type] ?? 'Human follow-up';
-}
-
-function actionCategory(action) {
-  if (['customer', 'system'].includes(action?.category)) return action.category;
-  if (action?.targetType === 'human_follow_up' || action?.type === 'follow_up') return 'customer';
-  return 'system';
-}
 </script>
 
 <template>
@@ -257,141 +220,6 @@ function actionCategory(action) {
         </div>
       </section>
 
-      <section v-else-if="activeTab === 'actions'" class="call-tab-panel">
-        <div class="call-cell-heading">
-          <div>
-            <p class="eyebrow">Actions & suggestions</p>
-            <h3>Review queue</h3>
-          </div>
-          <span class="section-count-pill">{{ callDetails.useActions.length }} open</span>
-        </div>
-
-        <div class="call-action-overview">
-          <article>
-            <span class="action-lane-icon customer"><UserRound :size="18" /></span>
-            <div>
-              <strong>{{ customerActions.length }}</strong>
-              <small>Customer follow-up</small>
-            </div>
-          </article>
-          <article>
-            <span class="action-lane-icon system"><Settings2 :size="18" /></span>
-            <div>
-              <strong>{{ systemActions.length }}</strong>
-              <small>System improvements</small>
-            </div>
-          </article>
-        </div>
-
-        <div v-if="callDetails.useActions.length > 0" class="call-action-lanes">
-          <section class="action-lane customer">
-            <header>
-              <span class="action-lane-icon customer"><UserRound :size="18" /></span>
-              <div>
-                <h4>Customer follow-up</h4>
-                <p>Caller-facing work such as callbacks, unanswered questions, escalations, or requested information.</p>
-              </div>
-            </header>
-
-            <div class="call-action-list grouped">
-              <article v-for="action in customerActions" :key="action.id" class="call-action-card customer">
-                <div class="call-action-card-main">
-                  <div class="call-action-topline">
-                    <span class="severity-dot" :class="action.severity"></span>
-                    <strong>{{ action.title || actionTypeLabel(action.type) }}</strong>
-                    <small>{{ actionTypeLabel(action.type) }} - {{ targetTypeLabel(action.targetType) }}</small>
-                  </div>
-                  <p>{{ action.reason }}</p>
-                  <div v-if="action.suggestion" class="action-suggestion-box">
-                    <span>Suggested customer action</span>
-                    <p>{{ action.suggestion }}</p>
-                  </div>
-                  <blockquote v-if="action.snippet">{{ action.snippet }}</blockquote>
-                </div>
-
-                <div class="call-action-buttons">
-                  <button class="text-button compact" type="button" @click="$emit('update-action-status', { action, status: 'done' })">
-                    Done
-                  </button>
-                  <button class="text-button compact" type="button" @click="$emit('update-action-status', { action, status: 'dismissed' })">
-                    Ignore
-                  </button>
-                  <button
-                    class="icon-button danger"
-                    type="button"
-                    :aria-label="`Delete action ${action.title || action.type}`"
-                    @click="$emit('delete-action', action)"
-                  >
-                    <Trash2 :size="15" />
-                  </button>
-                </div>
-              </article>
-
-              <section v-if="customerActions.length === 0" class="lane-empty-state">
-                <span>No customer follow-up</span>
-                <p>Nothing from this call needs a customer-facing response right now.</p>
-              </section>
-            </div>
-          </section>
-
-          <section class="action-lane system">
-            <header>
-              <span class="action-lane-icon system"><Settings2 :size="18" /></span>
-              <div>
-                <h4>System improvements</h4>
-                <p>Internal changes such as prompt updates, agent profile edits, script training, or parameter tuning.</p>
-              </div>
-            </header>
-
-            <div class="call-action-list grouped">
-              <article v-for="action in systemActions" :key="action.id" class="call-action-card system">
-                <div class="call-action-card-main">
-                  <div class="call-action-topline">
-                    <span class="severity-dot" :class="action.severity"></span>
-                    <strong>{{ action.title || actionTypeLabel(action.type) }}</strong>
-                    <small>{{ actionTypeLabel(action.type) }} - {{ targetTypeLabel(action.targetType) }}</small>
-                  </div>
-                  <p>{{ action.reason }}</p>
-                  <div v-if="action.suggestion" class="action-suggestion-box">
-                    <span>Suggested system change</span>
-                    <p>{{ action.suggestion }}</p>
-                  </div>
-                  <blockquote v-if="action.snippet">{{ action.snippet }}</blockquote>
-                </div>
-
-                <div class="call-action-buttons">
-                  <button class="text-button compact" type="button" @click="$emit('update-action-status', { action, status: 'done' })">
-                    Apply
-                  </button>
-                  <button class="text-button compact" type="button" @click="$emit('update-action-status', { action, status: 'dismissed' })">
-                    Ignore
-                  </button>
-                  <button
-                    class="icon-button danger"
-                    type="button"
-                    :aria-label="`Delete action ${action.title || action.type}`"
-                    @click="$emit('delete-action', action)"
-                  >
-                    <Trash2 :size="15" />
-                  </button>
-                </div>
-              </article>
-
-              <section v-if="systemActions.length === 0" class="lane-empty-state">
-                <span>No system changes</span>
-                <p>No prompt, agent profile, script, or parameter updates were suggested from this call.</p>
-              </section>
-            </div>
-          </section>
-        </div>
-
-        <section v-else class="parameter-empty-state compact">
-          <span>No actions</span>
-          <h4>No human action suggested for this call</h4>
-          <p>If every attached parameter passes, this tab stays empty.</p>
-        </section>
-      </section>
-
       <section v-else class="call-tab-panel">
         <div class="panel-heading compact">
           <div>
@@ -420,3 +248,5 @@ function actionCategory(action) {
     </section>
   </section>
 </template>
+
+

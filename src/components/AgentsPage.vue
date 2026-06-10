@@ -44,6 +44,11 @@ function openAgentSection(agentId, section) {
   emit('open-agent-page', { agentId, section });
 }
 
+function passRateLabel(agent) {
+  const analyzed = Number(agent.totalAnalyzedCalls || agent.analyzedCallCount || 0);
+  if (!analyzed) return 'Not analyzed';
+  return `${agent.passRate || 0}%`;
+}
 </script>
 
 <template>
@@ -90,20 +95,28 @@ function openAgentSection(agentId, section) {
             <span v-if="agent.needsParameterVersion" class="agent-setup-pill">Attach LLM parameters</span>
             <span v-else-if="agent.parameterVersionName" class="agent-version-pill">{{ agent.parameterVersionName }}</span>
           </span>
-          <span class="agent-row-insights">
+          <span class="agent-row-insights expanded">
             <span>
               <strong :class="helpers.scoreClass(agent.averageScore)">
                 {{ helpers.formatScore(agent.averageScore) }}
               </strong>
-              <small>Score</small>
+              <small>Avg score</small>
             </span>
             <span>
-              <strong>{{ agent.callCount }}</strong>
-              <small>Calls</small>
+              <strong>{{ passRateLabel(agent) }}</strong>
+              <small>Pass rate</small>
             </span>
             <span>
-              <strong>{{ agent.issueCount }}</strong>
-              <small>Issues</small>
+              <strong class="score-good">{{ agent.passedCallCount || 0 }}</strong>
+              <small>Passed</small>
+            </span>
+            <span>
+              <strong class="score-risk">{{ agent.failedCallCount || 0 }}</strong>
+              <small>Failed</small>
+            </span>
+            <span>
+              <strong>{{ agent.systemImprovementCount || 0 }}</strong>
+              <small>Improvements</small>
             </span>
           </span>
         </button>
@@ -113,7 +126,7 @@ function openAgentSection(agentId, section) {
             class="icon-button agent-menu-trigger"
             type="button"
             :aria-expanded="openMenuAgentId === agent.id"
-            :aria-label="`Open actions for ${agent.displayName}`"
+            :aria-label="`Open options for ${agent.displayName}`"
             @click.stop="toggleAgentMenu(agent.id)"
           >
             <MoreVertical :size="18" />
@@ -130,7 +143,7 @@ function openAgentSection(agentId, section) {
             </button>
             <button type="button" role="menuitem" @click="openAgentSection(agent.id, 'actions')">
               <ClipboardCheck :size="16" />
-              <span>Actions</span>
+              <span>System improvements</span>
             </button>
           </div>
         </div>

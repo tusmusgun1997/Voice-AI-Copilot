@@ -2510,6 +2510,14 @@ textarea:focus-visible {
   text-align: right;
 }
 
+.agent-row-insights.expanded {
+  gap: 16px;
+}
+
+.agent-row-insights.expanded > span {
+  min-width: 70px;
+}
+
 .agent-row-insights strong {
   color: var(--ink);
   font-size: 0.92rem;
@@ -4632,7 +4640,7 @@ textarea:focus-visible {
 .call-agent-tab small {
   display: inline-grid;
   min-width: 21px;
-  height: 21px;
+  min-height: 21px;
   place-items: center;
   border-radius: 999px;
   padding: 0 7px;
@@ -4690,7 +4698,7 @@ textarea:focus-visible {
 
 .call-metrics {
   display: grid;
-  grid-template-columns: repeat(5, minmax(82px, 1fr));
+  grid-template-columns: repeat(4, minmax(92px, 1fr));
   gap: 8px;
 }
 

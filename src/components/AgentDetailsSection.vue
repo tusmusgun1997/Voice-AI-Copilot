@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { HelpCircle } from '@lucide/vue';
 
 defineProps({
@@ -59,12 +59,20 @@ defineEmits(['cancel-edit-agent', 'save-agent', 'show-agent-calls', 'show-call',
         <strong>{{ selectedAgentPanel.callCount }}</strong>
       </div>
       <div>
-        <span>Issues</span>
-        <strong>{{ selectedAgentPanel.issueCount }}</strong>
+        <span>Passed</span>
+        <strong class="score-good">{{ selectedAgentPanel.passedCallCount || 0 }}</strong>
       </div>
       <div>
-        <span>Actions</span>
-        <strong>{{ selectedAgentPanel.useActionCount }}</strong>
+        <span>Failed</span>
+        <strong class="score-risk">{{ selectedAgentPanel.failedCallCount || 0 }}</strong>
+      </div>
+      <div>
+        <span>Pass rate</span>
+        <strong>{{ selectedAgentPanel.totalAnalyzedCalls ? `${selectedAgentPanel.passRate || 0}%` : 'Not analyzed' }}</strong>
+      </div>
+      <div>
+        <span>System improvements</span>
+        <strong>{{ selectedAgentPanel.systemImprovementCount || selectedAgentPanel.useActionCount || 0 }}</strong>
       </div>
     </div>
 

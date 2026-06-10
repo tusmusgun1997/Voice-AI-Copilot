@@ -1,4 +1,4 @@
-const SUPABASE_STORE = 'supabase';
+﻿const SUPABASE_STORE = 'supabase';
 const DEFAULT_LOCATION_ID = 'local-demo-location';
 let installationCache = null;
 
@@ -177,7 +177,7 @@ export async function updateSupabaseHumanAction(actionId, patch = {}) {
 
   const client = createSupabaseRestClient();
   const rows = await client.update(
-    'human_actions',
+    'agent_system_improvements',
     {
       id: `eq.${actionId}`
     },
@@ -187,14 +187,14 @@ export async function updateSupabaseHumanAction(actionId, patch = {}) {
     }
   );
 
-  return rows[0] ? rowToAction(rows[0]) : null;
+  return rows[0] ? rowToSystemImprovement(rows[0]) : null;
 }
 
 export async function deleteSupabaseHumanAction(actionId) {
   if (!isSupabaseStoreEnabled() || !actionId) return false;
 
   const client = createSupabaseRestClient();
-  await client.delete('human_actions', {
+  await client.delete('agent_system_improvements', {
     id: `eq.${actionId}`
   });
 
@@ -262,7 +262,8 @@ export async function cleanupSupabaseAgentData({ agentId, locationId, client: ex
     client.delete('agent_observability_profiles', params),
     client.delete('call_analyses', params),
     client.delete('call_analysis_jobs', params),
-    client.delete('webhook_events', params)
+    client.delete('webhook_events', params),
+    client.delete('agent_system_improvements', params)
   ]);
 
   return {
@@ -421,25 +422,24 @@ async function readAnalyses(client, installationId) {
     installation_id: `eq.${installationId}`,
     order: 'updated_at.desc'
   });
+  const allImprovements = await client.select('agent_system_improvements', {
+    installation_id: `eq.${installationId}`,
+    order: 'updated_at.desc'
+  });
 
   const hydrated = await Promise.all(
     analyses.map(async (analysis) => {
-      const [parameterResults, recommendations, useActions] = await Promise.all([
-        client.select('call_parameter_results', {
-          analysis_id: `eq.${analysis.id}`,
-          order: 'created_at.asc'
-        }),
-        client.select('call_recommendations', {
-          analysis_id: `eq.${analysis.id}`,
-          order: 'created_at.asc'
-        }),
-        client.select('human_actions', {
-          analysis_id: `eq.${analysis.id}`,
-          order: 'created_at.asc'
-        })
-      ]);
+      const parameterResults = await client.select('call_parameter_results', {
+        analysis_id: `eq.${analysis.id}`,
+        order: 'created_at.asc'
+      });
+      const relatedImprovements = allImprovements.filter(
+        (improvement) =>
+          cleanString(improvement.ghl_agent_id) === cleanString(analysis.ghl_agent_id) &&
+          (improvement.source_call_ids ?? []).includes(analysis.ghl_call_id)
+      );
 
-      return rowToAnalysis(analysis, parameterResults, recommendations, useActions);
+      return rowToAnalysis(analysis, parameterResults, relatedImprovements);
     })
   );
 
@@ -467,6 +467,7 @@ async function writeAnalyses(client, installationId, analyses) {
       status: analysis.status || 'queued',
       stage: analysis.stage || 'analysis_pending',
       score: analysis.score,
+      outcome: analysis.outcome || callOutcome(analysis.score),
       summary: analysis.summary || '',
       model: analysis.model || '',
       error_message: analysis.errorMessage || '',
@@ -477,25 +478,24 @@ async function writeAnalyses(client, installationId, analyses) {
   );
 
   for (const analysis of analyses) {
-    await Promise.all([
-      client.delete('call_parameter_results', { analysis_id: `eq.${analysis.id}` }),
-      client.delete('call_recommendations', { analysis_id: `eq.${analysis.id}` }),
-      client.delete('human_actions', { analysis_id: `eq.${analysis.id}` })
-    ]);
+    await client.delete('call_parameter_results', { analysis_id: `eq.${analysis.id}` });
 
     const parameterResults = (analysis.parameterResults ?? []).map((result, index) =>
       parameterResultToRow(result, analysis.id, index)
     );
-    const recommendations = (analysis.recommendations ?? []).map((recommendation) =>
-      recommendationToRow(recommendation, installationId, analysis)
-    );
-    const actions = (analysis.useActions ?? []).map((action) => actionToRow(action, installationId, analysis));
 
-    await Promise.all([
-      parameterResults.length ? client.insert('call_parameter_results', parameterResults) : Promise.resolve([]),
-      recommendations.length ? client.insert('call_recommendations', recommendations) : Promise.resolve([]),
-      actions.length ? client.insert('human_actions', actions) : Promise.resolve([])
-    ]);
+    if (parameterResults.length > 0) {
+      await client.insert('call_parameter_results', parameterResults);
+    }
+  }
+
+  await client.delete('agent_system_improvements', {
+    installation_id: `eq.${installationId}`
+  });
+
+  const improvements = aggregateSystemImprovements(analyses, installationId);
+  if (improvements.length > 0) {
+    await client.insert('agent_system_improvements', improvements);
   }
 
   return analyses;
@@ -538,7 +538,7 @@ function parameterToRow(parameter, versionId, index) {
   };
 }
 
-function rowToAnalysis(row, parameterResults, recommendations, useActions) {
+function rowToAnalysis(row, parameterResults, systemImprovements = []) {
   return {
     id: row.id,
     jobId: row.job_key || '',
@@ -552,10 +552,12 @@ function rowToAnalysis(row, parameterResults, recommendations, useActions) {
     status: row.status || 'queued',
     stage: row.stage || 'analysis_pending',
     score: row.score,
+    outcome: row.outcome || callOutcome(row.score),
     summary: row.summary || '',
     parameterResults: parameterResults.map(rowToParameterResult),
-    recommendations: recommendations.map(rowToRecommendation),
-    useActions: useActions.map(rowToAction),
+    recommendations: [],
+    useActions: [],
+    systemImprovements: systemImprovements.map(rowToSystemImprovement),
     errorMessage: row.error_message || '',
     model: row.model || '',
     queuedReason: row.queued_reason || '',
@@ -632,25 +634,31 @@ function recommendationToRow(recommendation, installationId, analysis) {
   };
 }
 
-function rowToAction(row) {
+function rowToSystemImprovement(row) {
   return {
     id: row.id,
-    callId: row.ghl_call_id,
     agentId: row.ghl_agent_id,
+    agentName: row.agent_name_snapshot || '',
     parameterId: row.parameter_key || '',
     title: row.title || '',
-    type: row.action_type || '',
-    category: row.action_category || actionCategoryFromSignals(row.action_type, row.target_type),
+    type: row.improvement_type || 'prompt_update',
     reason: row.reason || '',
     suggestion: row.suggestion || '',
-    snippet: row.transcript_snippet || '',
+    snippet: row.evidence_snippet || '',
     severity: row.severity || 'info',
-    targetType: row.target_type || '',
+    targetType: row.target_type || 'agent_profile',
     targetId: row.target_id || '',
     status: row.status || 'open',
+    sourceCallIds: row.source_call_ids ?? [],
+    sourceCallCount: row.source_call_count || (row.source_call_ids ?? []).length,
     createdAt: row.created_at,
-    updatedAt: row.updated_at
+    updatedAt: row.updated_at,
+    source: 'llm'
   };
+}
+
+function rowToAction(row) {
+  return rowToSystemImprovement(row);
 }
 
 function rowToAnalysisJob(row) {
@@ -675,34 +683,76 @@ function rowToAnalysisJob(row) {
   };
 }
 
+function aggregateSystemImprovements(analyses, installationId) {
+  const byKey = new Map();
+
+  for (const analysis of analyses) {
+    for (const improvement of analysis.systemImprovements ?? []) {
+      const targetType = systemTargetType(improvement.targetType);
+      const key = [
+        analysis.agentId || improvement.agentId || '',
+        improvement.type || 'prompt_update',
+        improvement.parameterId || '',
+        targetType,
+        improvement.targetId || improvement.parameterId || '',
+        improvement.title || ''
+      ].join('|');
+
+      if (!byKey.has(key)) {
+        byKey.set(key, {
+          id: improvement.id || `improvement-${slug(key)}`,
+          installation_id: installationId,
+          ghl_agent_id: improvement.agentId || analysis.agentId || '',
+          agent_name_snapshot: improvement.agentName || analysis.agentName || '',
+          parameter_key: improvement.parameterId || '',
+          title: improvement.title || improvement.reason || 'System improvement needed',
+          improvement_type: improvement.type || 'prompt_update',
+          reason: improvement.reason || '',
+          suggestion: improvement.suggestion || '',
+          evidence_snippet: improvement.snippet || '',
+          severity: improvement.severity || 'info',
+          target_type: targetType,
+          target_id: improvement.targetId || improvement.parameterId || '',
+          source_call_ids: [],
+          source_call_count: 0,
+          status: improvement.status || 'open',
+          created_at: improvement.createdAt || analysis.analyzedAt || analysis.createdAt || new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+      }
+
+      const row = byKey.get(key);
+      row.source_call_ids = Array.from(new Set([...(row.source_call_ids ?? []), ...(improvement.sourceCallIds ?? []), analysis.callId].filter(Boolean)));
+      row.source_call_count = row.source_call_ids.length;
+      row.severity = higherSeverity(row.severity, improvement.severity);
+    }
+  }
+
+  return Array.from(byKey.values()).filter((row) => row.status !== 'dismissed');
+}
+
 function actionToRow(action, installationId, analysis) {
-  return {
-    id: action.id || `${analysis.id}-action-${slug(action.type || Date.now())}`,
-    analysis_id: analysis.id,
-    installation_id: installationId,
-    ghl_agent_id: action.agentId || analysis.agentId || '',
-    ghl_call_id: action.callId || analysis.callId || '',
-    parameter_key: action.parameterId || '',
-    title: action.title || action.reason || 'Human review needed',
-    action_type: action.type || 'human_review',
-    action_category: action.category || actionCategoryFromSignals(action.type, action.targetType),
-    reason: action.reason || '',
-    suggestion: action.suggestion || '',
-    transcript_snippet: action.snippet || '',
-    severity: action.severity || 'info',
-    target_type: action.targetType || 'human_follow_up',
-    target_id: action.targetId || action.parameterId || '',
-    status: action.status || 'open'
-  };
+  return aggregateSystemImprovements([{ ...analysis, systemImprovements: [action] }], installationId)[0];
+}
+
+function systemTargetType(targetType) {
+  if (['agent_profile', 'observability_parameter'].includes(targetType)) return targetType;
+  return 'agent_profile';
+}
+
+function higherSeverity(current = 'info', next = 'info') {
+  const rank = { critical: 3, warning: 2, info: 1 };
+  return (rank[next] ?? 1) > (rank[current] ?? 1) ? next : current;
+}
+
+function callOutcome(score) {
+  const numericScore = Number(score);
+  if (!Number.isFinite(numericScore)) return 'pending';
+  return numericScore >= 80 ? 'passed' : 'failed';
 }
 
 function cleanUrl(value) {
   return cleanString(value).replace(/\/+$/, '');
-}
-
-function actionCategoryFromSignals(type, targetType) {
-  if (targetType === 'human_follow_up' || type === 'follow_up') return 'customer';
-  return 'system';
 }
 
 function cleanString(value) {
@@ -724,3 +774,5 @@ function slug(value) {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/(^-|-$)/g, '');
 }
+
+

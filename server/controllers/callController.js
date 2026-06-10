@@ -1,4 +1,4 @@
-import { deleteHumanAction, getCallAnalysis, listCallAnalyses, updateHumanAction } from '../analysisStore.js';
+﻿import { deleteHumanAction, getCallAnalysis, listCallAnalyses, updateHumanAction } from '../analysisStore.js';
 import {
   deleteSupabaseHumanAction,
   isSupabaseStoreEnabled,
@@ -88,7 +88,7 @@ export function createCallController({ analysisQueue, highLevelService, localDat
 
     if (!actionId || !allowedStatuses.has(status)) {
       response.status(400).json({
-        message: 'A valid actionId and status are required.',
+        message: 'A valid system improvement ID and status are required.',
         status: 400
       });
       return;
@@ -100,7 +100,7 @@ export function createCallController({ analysisQueue, highLevelService, localDat
 
     if (!action) {
       response.status(404).json({
-        message: 'Human action was not found.',
+        message: 'System improvement was not found.',
         status: 404
       });
       return;
@@ -129,7 +129,7 @@ export function createCallController({ analysisQueue, highLevelService, localDat
 
     if (!deleted) {
       response.status(404).json({
-        message: 'Human action was not found.',
+        message: 'System improvement was not found.',
         status: 404
       });
       return;
@@ -151,3 +151,4 @@ export function createCallController({ analysisQueue, highLevelService, localDat
     deleteAction
   };
 }
+

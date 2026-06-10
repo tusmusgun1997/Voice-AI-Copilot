@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { ArrowLeft, BarChart3, ClipboardCheck, SlidersHorizontal } from '@lucide/vue';
 import AgentActionsSection from './AgentActionsSection.vue';
 import AgentDetailsSection from './AgentDetailsSection.vue';
@@ -97,7 +97,7 @@ defineEmits([
 const detailTabs = [
   { id: 'details', label: 'Info', icon: BarChart3 },
   { id: 'observability-parameters', label: 'Observability parameters', icon: SlidersHorizontal },
-  { id: 'actions', label: 'Actions', icon: ClipboardCheck }
+  { id: 'actions', label: 'System improvements', icon: ClipboardCheck }
 ];
 </script>
 
@@ -172,3 +172,4 @@ const detailTabs = [
     </section>
   </section>
 </template>
+
